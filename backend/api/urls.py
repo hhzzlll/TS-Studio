@@ -1,0 +1,14 @@
+from django.urls import path
+from .views import FileUploadView, TrainingView, ConfigView, TrainingStatusView, PredictView, PredictionResultView, ActiveTrainingView
+from .extra_views import TrainingControlView
+
+urlpatterns = [
+    path('upload/', FileUploadView.as_view(), name='file-upload'),
+    path('config/', ConfigView.as_view(), name='config'),
+    path('train/', TrainingView.as_view(), name='train'),
+    path('train/active/', ActiveTrainingView.as_view(), name='train-active'),
+    path('train/status/<int:pk>/', TrainingStatusView.as_view(), name='train-status'),
+    path('train/control/<int:pk>/', TrainingControlView.as_view(), name='train-control'),
+    path('predict/', PredictView.as_view(), name='predict'),
+    path('result/<str:filename>/', PredictionResultView.as_view(), name='prediction-result'),
+]
