@@ -498,6 +498,18 @@ class Exp_Main(Exp_Basic):
 
         mae, mse, rmse, mape, mspe, corr = metric(preds, trues)
 
+        # Save numpy results for visualization
+        try:
+             folder_path = os.path.join(self.args.checkpoints, setting)
+             if not os.path.exists(folder_path):
+                 os.makedirs(folder_path)
+             
+             np.save(os.path.join(folder_path, 'preds.npy'), preds)
+             np.save(os.path.join(folder_path, 'trues.npy'), trues)
+             print(f"Saved preds.npy and trues.npy to {folder_path}")
+        except Exception as e:
+             print(f"Failed to save result arrays: {e}")
+
         if self.args.sample_times > 1:
             print('mse|mae|crps|rmse|mape|mspe|corr')
             print(mse, mae, crps, rmse, mape, mspe, corr)

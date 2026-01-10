@@ -55,7 +55,13 @@ export const startTraining = (config: any) => {
 export const getActiveTraining = () => {
     return api.get('/train/active/')
 }
+export const getCompletedModels = () => {
+    return api.get('/models/completed/')
+}
 
+export const getPredictionResult = (id: number, limit: number = 20) => {
+    return api.get(`/result/${id}/?limit=${limit}`)
+}
 export const getTrainingStatus = (jobId: string | number) => {
     return api.get(`/train/status/${jobId}/`)
 }

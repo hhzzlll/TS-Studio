@@ -462,6 +462,12 @@ class ActiveTrainingView(APIView):
         serializer = TrainingModelSerializer(active_jobs, many=True)
         return Response(serializer.data)
 
+class CompletedModelsView(APIView):
+    def get(self, request):
+        jobs = TrainingModel.objects.filter(status='completed').order_by('-created_at')
+        serializer = TrainingModelSerializer(jobs, many=True)
+        return Response(serializer.data)
+
 class TrainingStatusView(APIView):
     def get(self, request, pk):
         try:
@@ -473,15 +479,83 @@ class TrainingStatusView(APIView):
 
 class PredictView(APIView):
     def post(self, request):
-        # Implementation for prediction would go here
-        # It would load the model from the specified checkpoint and run inference
-        return Response({'status': 'Not implemented yet, requires model loading logic'})
+        # This could be used for running inference on NEW data
+        return Response({'status': 'Not implemented yet'})
 
 class PredictionResultView(APIView):
-    def get(self, request, filename):
-        # Return saved result file
-        path = os.path.join(settings.BASE_DIR, 'results', filename) 
-        if os.path.exists(path):
-            # Return file content
-            pass
-        return Response({'status': 'todo'})
+    def get(self, request, pk):
+        try:
+            job = TrainingModel.objects.get(pk=pk)
+            config = job.config
+            
+            # Reconstruct setting string to find folder
+            # Needed: model_id, model, data, features, seq_len, label_len, pred_len, ii, stage_mode
+            # We assume ii=0 for now or try to find it
+            
+            # Defaults must match run_training_task defaults if missing
+            model = config.get('model', 'DDPM')
+            data_type = config.get('dataset_type', 'custom')
+            features = config.get('features', 'M')
+            seq_len = config.get('seq_len', 192)
+            label_len = config.get('label_len', 7) # This might have been auto-calculated in run_training_task but stored in config? 
+            # Wait, config stored in DB is request.data. 
+            # In run_training_task: args.label_len = int(args.pred_len / 2)
+            # So we should recalculate here to match
+            pred_len = config.get('pred_len', 14)
+            label_len = int(pred_len / 2) # Force recalculate to match logic
+            
+            dataset_name = config.get('dataset_name', 'Exchange')
+            # model_id logic
+            model_id = config.get('model_id', "{}_{}_{}".format(dataset_name, seq_len, pred_len))
+            stage_mode = config.get('stage_mode', 'TWO')
+            
+            ii = 0
+            setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dt{}_{}'.format(
+                model_id,
+                model,
+                data_type,
+                features,
+                seq_len,
+                label_len,
+                pred_len, 
+                ii,
+                stage_mode)
+            
+            # Checkpoints folder
+            ckpt_root = './checkpoints/' # Default in args
+            folder_path = os.path.join(ckpt_root, setting)
+            
+            preds_path = os.path.join(folder_path, 'preds.npy')
+            trues_path = os.path.join(folder_path, 'trues.npy')
+            
+            if not os.path.exists(preds_path):
+                 # Try absolute path or project root logic
+                 base_dir = str(settings.BASE_DIR)
+                 # backend/checkpoints/...
+                 folder_path = os.path.join(base_dir, 'checkpoints', setting)
+                 preds_path = os.path.join(folder_path, 'preds.npy')
+                 trues_path = os.path.join(folder_path, 'trues.npy')
+
+            if not os.path.exists(preds_path):
+                return Response({'error': f'Results not found at {folder_path}'}, status=404)
+            
+            # Load data
+            preds = np.load(preds_path)
+            trues = np.load(trues_path)
+            
+            # preds shape: (Samples, PredLen, Dims)
+            # Return first N samples
+            limit = int(request.query_params.get('limit', 10))
+            
+            return Response({
+                'preds': preds[:limit].tolist(),
+                'trues': trues[:limit].tolist(),
+                'shape': preds.shape,
+                'setting': setting
+            })
+
+        except TrainingModel.DoesNotExist:
+            return Response({'error': 'Job not found'}, status=404)
+        except Exception as e:
+            traceback.print_exc()
+            return Response({'error': str(e)}, status=500)
