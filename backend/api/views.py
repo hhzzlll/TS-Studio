@@ -63,7 +63,40 @@ class FileUploadView(APIView):
         if not file_obj:
             return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
         
-        save_path = os.path.join(settings.MEDIA_ROOT, file_obj.name)
+        # Check if this is just a preview request
+        is_preview = request.query_params.get('preview') == 'true'
+        
+        if is_preview:
+            try:
+                # Read directly from memory/temp file for preview
+                # Make sure to handle multiple reads or seek if necessary, 
+                # though here we strictly do one read per request.
+                if file_obj.name.endswith('.csv'):
+                    df = pd.read_csv(file_obj)
+                else:
+                    df = pd.read_excel(file_obj)
+                
+                # Replace NaN with None (null in JSON) to avoid JSON serialization errors
+                df = df.replace({np.nan: None})
+                
+                preview = df.head(5).to_dict(orient='records')
+                columns = list(df.columns)
+                return Response({
+                    'status': 'success', 
+                    'filename': file_obj.name, 
+                    'columns': columns, 
+                    'preview': preview,
+                    'mode': 'preview'
+                })
+            except Exception as e:
+                return Response({'status': 'error', 'error': f"Failed to preview: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Save to 'data' directory in backend root
+        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        if not os.path.exists(data_dir):
+            os.makedirs(data_dir)
+
+        save_path = os.path.join(data_dir, file_obj.name)
         with open(save_path, 'wb+') as destination:
             for chunk in file_obj.chunks():
                 destination.write(chunk)
@@ -71,16 +104,69 @@ class FileUploadView(APIView):
         # Read preview
         try:
             df = pd.read_csv(save_path) if save_path.endswith('.csv') else pd.read_excel(save_path)
+            # Replace NaN with None
+            df = df.replace({np.nan: None})
+            
             preview = df.head(5).to_dict(orient='records')
             columns = list(df.columns)
             return Response({
                 'status': 'success', 
                 'filename': file_obj.name, 
                 'columns': columns, 
-                'preview': preview
+                'preview': preview,
+                'mode': 'saved'
             })
         except Exception as e:
             return Response({'status': 'saved but could not read', 'error': str(e)})
+
+class DatasetListView(APIView):
+    def get(self, request):
+        # Ensure BASE_DIR is a string
+        base_dir = str(settings.BASE_DIR)
+        data_dir = os.path.join(base_dir, 'data')
+        
+        print(f"DatasetListView: Searching in {data_dir}")
+        
+        if not os.path.exists(data_dir):
+            print(f"DatasetListView: Data dir does not exist")
+            # Try creating it to see if that helps for future
+            try:
+                os.makedirs(data_dir)
+            except:
+                pass
+            return Response([])
+        
+        # Case insensitive check for extensions
+        files = [f for f in os.listdir(data_dir) if f.lower().endswith(('.csv', '.xlsx'))]
+        print(f"DatasetListView: Found files: {files}")
+        return Response(files)
+
+class DatasetInfoView(APIView):
+    def get(self, request):
+        filename = request.query_params.get('filename')
+        if not filename:
+             return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
+             
+        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        file_path = os.path.join(data_dir, filename)
+        
+        if not os.path.exists(file_path):
+             return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
+             
+        try:
+            df = pd.read_csv(file_path) if filename.endswith('.csv') else pd.read_excel(file_path)
+            # Replace NaN with None
+            df = df.replace({np.nan: None})
+            
+            preview = df.head(5).to_dict(orient='records')
+            columns = list(df.columns)
+            return Response({
+                'filename': filename,
+                'columns': columns,
+                'preview': preview
+            })
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class Args:
     pass
@@ -162,13 +248,52 @@ def run_training_task(training_job_id, config_data):
         args.use_amp = False  # Automatic Mixed Precision
         
         # Path configuration
-        args.root_path = os.path.join(settings.MEDIA_ROOT) # Point to uploaded files directory
+        args.root_path = os.path.join(settings.BASE_DIR, 'data') # Point to uploaded files directory
         args.data_path = config_data.get('filename', 'Exchange.csv') # Default file
         args.data = config_data.get('dataset_type', 'custom') # Default type
 
         # Override with user config
         for k, v in config_data.items():
             setattr(args, k, v)
+        
+        # 1. Update label_len defaults to pred_len / 2
+        args.label_len = int(args.pred_len / 2)
+
+        # 2. Update num_vars from dataset
+        try:
+             full_data_path = os.path.join(args.root_path, args.data_path)
+             if os.path.exists(full_data_path):
+                 if full_data_path.endswith('.csv'):
+                     df = pd.read_csv(full_data_path)
+                 else:
+                     df = pd.read_excel(full_data_path)
+                 # args.num_vars = cols - 1 (assuming 1 date column)
+                 args.num_vars = len(df.columns) - 1
+                 print(f"Updated args.num_vars to {args.num_vars} based on dataset columns")
+             else:
+                 print(f"Warning: Data file not found at {full_data_path}, skipping num_vars update")
+        except Exception as e:
+            print(f"Error reading dataset for num_vars: {e}")
+
+        # 3. Update config_FEA.json
+        try:
+            config_fea_path = os.path.join(ALGORITHM_PATH, 'config', 'config_FEA.json')
+            if os.path.exists(config_fea_path):
+                with open(config_fea_path, 'r') as f:
+                    fea_config = json.load(f)
+                
+                if 'FEA_config' in fea_config:
+                    c = fea_config['FEA_config']
+                    c['pred_len'] = args.pred_len
+                    c['y_len'] = args.seq_len + args.pred_len
+                    c['in_channels'] = args.num_vars
+                    c['out_channels'] = args.num_vars
+                
+                with open(config_fea_path, 'w') as f:
+                    json.dump(fea_config, f, indent=4)
+                print(f"Updated config_FEA.json with pred_len={args.pred_len}, y_len={args.seq_len + args.pred_len}, channels={args.num_vars}")
+        except Exception as e:
+            print(f"Error updating config_FEA.json: {e}")
         
         args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
         

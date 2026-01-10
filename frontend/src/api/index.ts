@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-    baseURL: 'http://127.0.0.1:8000/api',
+    baseURL: '/api',
     timeout: 50000
 })
 
@@ -27,8 +27,9 @@ api.interceptors.response.use(
     }
 )
 
-export const uploadFile = (formData: FormData) => {
-    return api.post('/upload/', formData, {
+export const uploadFile = (formData: FormData, isPreview: boolean = false) => {
+    const url = isPreview ? '/upload/?preview=true' : '/upload/';
+    return api.post(url, formData, {
         headers: {
             'Content-Type': 'multipart/form-data'
         }
@@ -37,6 +38,14 @@ export const uploadFile = (formData: FormData) => {
 
 export const getConfig = () => {
     return api.get('/config/')
+}
+
+export const getDatasets = () => {
+    return api.get('/datasets/')
+}
+
+export const getDatasetInfo = (filename: string) => {
+    return api.get(`/datasets/info/?filename=${filename}`)
 }
 
 export const startTraining = (config: any) => {
