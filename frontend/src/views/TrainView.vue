@@ -39,6 +39,13 @@ const isTraining = ref(false)
 const trainingJobs = ref<any[]>([])
 let pollInterval: any = null
 
+const getStatusText = (job: any) => {
+    if (job.status === 'running' && job.metrics && job.metrics.stage) {
+        return job.metrics.stage.toUpperCase()
+    }
+    return job.status.toUpperCase()
+}
+
 const getStatusColor = (job: any) => {
   const map: Record<string, string> = {
     'pending': 'text-yellow-500',
@@ -295,7 +302,7 @@ onUnmounted(() => {
         <CardHeader>
           <CardTitle class="flex items-center justify-between">
               <span>训练状态</span>
-              <span :class="getStatusColor(job)" class="uppercase text-sm font-bold">{{ job.status }}</span>
+              <span :class="getStatusColor(job)" class="uppercase text-sm font-bold">{{ getStatusText(job) }}</span>
           </CardTitle>
         </CardHeader>
         <CardContent>

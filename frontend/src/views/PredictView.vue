@@ -133,7 +133,7 @@ watch(sampleIndex, () => {
             <label class="text-sm font-medium">选择已训练模型</label>
             <select v-model="selectedModelId" @change="handleModelChange" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                  <option v-for="m in models" :key="m.id" :value="m.id">
-                    {{ m.name }} (ID: {{ m.id }})
+                    【{{ m.config.filename || m.config.dataset_name }}】{{ m.name }} | 模式:{{ m.config.features }} | 长度:{{ m.config.seq_len }}/{{ m.config.pred_len }} (ID: {{ m.id }})
                  </option>
             </select>
         </div>

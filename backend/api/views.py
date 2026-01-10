@@ -241,7 +241,7 @@ def run_training_task(training_job_id, config_data):
         # num_workers=0 ensures data loading happens in the main process
         # This prevents 'Apps not loaded' errors on Windows caused by multiprocessing importing Django models
         args.num_workers = 0 
-        args.itr = 10
+        args.itr = 1
         args.batch_size = 64
         args.test_batch_size = 64
         args.use_valset = True  # Default to using validation set

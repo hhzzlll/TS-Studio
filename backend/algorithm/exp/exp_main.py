@@ -85,6 +85,8 @@ class Exp_Main(Exp_Basic):
         return train_data 
 
     def pretrain(self, setting):
+        if self.callback:
+            self.callback(stage="Pre-training", current_epoch=0, total_epochs=self.args.pretrain_epochs, logs=None)
 
         path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(path):
@@ -98,6 +100,13 @@ class Exp_Main(Exp_Basic):
         time_now = time.time()
 
         train_steps = len(train_loader)
+        
+        # Pretraining optimization
+        model_optim, lr_scheduler = self._select_optimizer()
+
+        for epoch in range(self.args.pretrain_epochs):
+             if self.callback:
+                self.callback(stage="Pre-training", current_epoch=epoch+1, total_epochs=self.args.pretrain_epochs, logs=None)
 
         model_optim = optim.Adam(self.model.parameters(), lr=0.0001)
 
@@ -146,6 +155,8 @@ class Exp_Main(Exp_Basic):
                 torch.save(self.model.dlinear_model.state_dict(), path + '/' + 'pretrain_model_checkpoint.pth')
 
     def train(self, setting):
+        if self.callback:
+            self.callback(stage="Training", current_epoch=0, total_epochs=self.args.train_epochs, logs=None)
 
         if self.args.model in ['depts']:
             full_train_seqs = self._get_full_train_val_data()
@@ -187,7 +198,7 @@ class Exp_Main(Exp_Basic):
         for epoch in range(self.args.train_epochs):
             # Callback for interaction
             if self.callback:
-                self.callback('train', epoch + 1, self.args.train_epochs, training_process)
+                self.callback(stage="Training", current_epoch=epoch+1, total_epochs=self.args.train_epochs, logs=training_process)
 
             iter_count = 0
             train_loss = []
@@ -324,6 +335,8 @@ class Exp_Main(Exp_Basic):
         return mse
 
     def test(self, setting, mode="test"):
+        if self.callback:
+            self.callback(stage="Testing", current_epoch=1, total_epochs=1, logs=None)
 
         test_data, test_loader = test_data, test_loader = self._get_data(flag=mode)
 
