@@ -1,7 +1,7 @@
 {
     "FEA_config": {
-        "in_channels": 8,
-        "out_channels": 8,
+        "in_channels": 7,
+        "out_channels": 7,
         "num_res_layers": 18,
         "res_channels": 32,
         "skip_channels": 32,

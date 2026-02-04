@@ -14,6 +14,9 @@ from .models import TrainingModel
 from .serializers import TrainingModelSerializer
 import sys
 import pathlib
+import statsmodels.api as sm
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.seasonal import seasonal_decompose
 
 # Ensure the parent directory of 'backend' is in sys.path so 'import backend.algorithm...' works
 # settings.BASE_DIR is usually '.../TS-Studio/backend'
@@ -166,6 +169,249 @@ class DatasetInfoView(APIView):
                 'preview': preview
             })
         except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class StatisticalAnalysisView(APIView):
+    def get(self, request):
+        filename = request.query_params.get('filename')
+        if not filename:
+             return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
+             
+        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        file_path = os.path.join(data_dir, filename)
+        
+        if not os.path.exists(file_path):
+             return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
+             
+        try:
+            if filename.endswith('.csv'):
+                df = pd.read_csv(file_path)
+            else:
+                df = pd.read_excel(file_path)
+
+            # Filter only numeric columns for stats and correlation
+            numeric_df = df.select_dtypes(include=[np.number])
+
+            if numeric_df.empty:
+                 return Response({'error': 'No numeric columns found for analysis'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Descriptive Statistics
+            # Convert to dict and handle None/NaN for JSON
+            stats = numeric_df.describe().to_dict()
+            
+            # Correlation Matrix
+            correlation = numeric_df.corr()
+            correlation = correlation.replace({np.nan: None}).to_dict()
+            
+            # Helper to clean floats for JSON (inf, nan)
+            def clean_floats(obj):
+                if isinstance(obj, float):
+                    if np.isnan(obj): return None
+                    if np.isinf(obj): return "Infinity" if obj > 0 else "-Infinity"
+                if isinstance(obj, dict):
+                    return {k: clean_floats(v) for k, v in obj.items()}
+                return obj
+
+            stats = clean_floats(stats)
+            correlation = clean_floats(correlation)
+
+            return Response({
+                'filename': filename,
+                'statistics': stats,
+                'correlation': correlation
+            })
+        except Exception as e:
+            traceback.print_exc()
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class ColumnAnalysisView(APIView):
+    def get(self, request):
+        filename = request.query_params.get('filename')
+        column = request.query_params.get('column')
+        
+        if not filename or not column:
+             return Response({'error': 'Filename and column required'}, status=status.HTTP_400_BAD_REQUEST)
+             
+        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        file_path = os.path.join(data_dir, filename)
+        
+        if not os.path.exists(file_path):
+             return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
+             
+        try:
+            if filename.endswith('.csv'):
+                df = pd.read_csv(file_path)
+            else:
+                df = pd.read_excel(file_path)
+
+            if column not in df.columns:
+                 return Response({'error': f'Column {column} not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Helper to clean floats
+            def clean_floats(obj):
+                if isinstance(obj, float):
+                    if np.isnan(obj): return None
+                    if np.isinf(obj): return "Infinity" if obj > 0 else "-Infinity"
+                if isinstance(obj, dict):
+                    return {k: clean_floats(v) for k, v in obj.items()}
+                if isinstance(obj, list):
+                    return [clean_floats(i) for i in obj]
+                return obj
+
+            # Prepare series data
+            # Assume first column is time/date if not specified
+            date_col = df.columns[0]
+            labels = df[date_col].astype(str).tolist()
+            values = df[column].tolist()
+            
+            # Clean data for stats analysis
+            clean_series = df[column].dropna()
+            if clean_series.empty:
+                 return Response({'error': 'Column is empty or all NaN'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # 1. Stats
+            stats = clean_series.describe().to_dict()
+            
+            # 2. Stationarity (ADF)
+            stationarity = {}
+            try:
+                # ADF requires at least some variability
+                if clean_series.nunique() > 1:
+                    adf_res = adfuller(clean_series.values)
+                    stationarity = {
+                        'adf_statistic': adf_res[0],
+                        'p_value': adf_res[1],
+                        'critical_values': adf_res[4],
+                        'is_stationary': bool(adf_res[1] < 0.05)
+                    }
+                else:
+                    stationarity = {'error': 'Data is constant, cannot run ADF'}
+            except Exception as e:
+                stationarity = {'error': str(e)}
+
+            # 3. Decomposition
+            trend = []
+            seasonal = []
+            resid = []
+            
+            try:
+                # Use a default period of 12 (monthly-like) or heuristic
+                period = 12 
+                if len(clean_series) > period * 2:
+                    decomp = seasonal_decompose(clean_series, model='additive', period=period, extrapolate_trend='freq')
+                    trend = decomp.trend.tolist()
+                    seasonal = decomp.seasonal.tolist()
+                    resid = decomp.resid.tolist()
+                else:
+                    # Too short for 12, try simple rolling mean
+                    w = max(2, len(clean_series) // 5)
+                    trend = clean_series.rolling(window=w, center=True).mean().bfill().ffill().tolist()
+            except Exception as e:
+                print(f"Decomposition error: {e}")
+                # Fallback Trend
+                try:
+                     trend = clean_series.rolling(window=12, center=True).mean().fillna(0).tolist()
+                except:
+                     pass
+
+            # 4. Anomaly Detection (3-Sigma)
+            anomalies = []
+            try:
+                mean_val = clean_series.mean()
+                std_val = clean_series.std()
+                threshold = 3
+                # Find indices where value is outlier
+                anomaly_indices = clean_series[np.abs(clean_series - mean_val) > threshold * std_val].index
+                # Map to [label, value] format for ECharts
+                for idx in anomaly_indices:
+                     # Check bounds just in case
+                     if idx < len(labels):
+                         anomalies.append([labels[idx], float(clean_series[idx])])
+            except Exception as e:
+                print(f"Anomaly detection error: {e}")
+
+            # 5. Differencing
+            diff_values = []
+            diff_stationarity = {}
+            try:
+                diff_series = clean_series.diff()
+                # For visualization: fill NaN calculation artifacts with 0 to keep length consistent
+                diff_values = diff_series.fillna(0).tolist()
+                
+                # For Stats (ADF): Drop NaN to get accurate stats
+                diff_series_clean = diff_series.dropna()
+                if not diff_series_clean.empty and diff_series_clean.nunique() > 1:
+                     adf_res_diff = adfuller(diff_series_clean.values)
+                     diff_stationarity = {
+                        'adf_statistic': adf_res_diff[0],
+                        'p_value': adf_res_diff[1],
+                        'critical_values': adf_res_diff[4],
+                        'is_stationary': bool(adf_res_diff[1] < 0.05)
+                    }
+                else:
+                    diff_stationarity = {'error': 'Data is constant or empty after differencing'}
+                    
+            except Exception as e:
+                print(f"Differencing error: {e}")
+                diff_stationarity = {'error': str(e)}
+
+            # 6. FFT (Spectrum)
+            fft_freqs = []
+            fft_mags = []
+            fft_peaks = []
+            try:
+                n = len(clean_series)
+                if n > 0:
+                    fft_vals = np.fft.fft(clean_series.values)
+                    # Positive frequencies
+                    n_half = n // 2
+                    freqs = np.fft.fftfreq(n)[:n_half]
+                    mags = np.abs(fft_vals)[:n_half] / n # Normalize
+                    
+                    # Remove DC (idx 0)
+                    if len(mags) > 0: 
+                        mags[0] = 0
+                        
+                    # Convert to list
+                    fft_freqs = freqs.tolist()
+                    fft_mags = mags.tolist()
+
+                    # Identify Top-3 Peaks
+                    if len(mags) > 0:
+                        # indices of max elements
+                        top_indices = np.argsort(mags)[-3:][::-1]
+                        for idx in top_indices:
+                            f = freqs[idx]
+                            m = mags[idx]
+                            # Only keep valid peaks
+                            if m > 1e-9 and f > 0:
+                                fft_peaks.append({
+                                    'freq': float(f),
+                                    'period': float(1.0/f),
+                                    'mag': float(m)
+                                })
+            except Exception as e:
+                print(f"FFT error: {e}")
+
+            return Response(clean_floats({
+                'column': column,
+                'labels': labels,
+                'values': values,
+                'stats': stats,
+                'stationarity': stationarity,
+                'trend': trend,
+                'seasonal': seasonal,
+                'resid': resid,
+                'anomalies': anomalies,
+                'diff_values': diff_values,
+                'diff_stationarity': diff_stationarity,
+                'fft_freqs': fft_freqs,
+                'fft_mags': fft_mags,
+                'fft_peaks': fft_peaks
+            }))
+
+        except Exception as e:
+            traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class Args:

@@ -9,6 +9,7 @@ const activePath = computed(() => route.path)
 
 const menuItems = [
   { path: '/', icon: 'lucide:file-up', label: '数据管理' },
+  { path: '/analysis', icon: 'lucide:bar-chart-2', label: '统计分析' },
   { path: '/train', icon: 'lucide:brain-circuit', label: '模型训练' },
   { path: '/predict', icon: 'lucide:line-chart', label: '预测分析' },
 ]

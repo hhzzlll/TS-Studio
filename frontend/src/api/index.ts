@@ -48,6 +48,14 @@ export const getDatasetInfo = (filename: string) => {
     return api.get(`/datasets/info/?filename=${filename}`)
 }
 
+export const getDatasetAnalysis = (filename: string) => {
+    return api.get(`/datasets/analysis/?filename=${filename}`)
+}
+
+export const getColumnAnalysis = (filename: string, column: string) => {
+    return api.get(`/datasets/column-analysis/?filename=${filename}&column=${column}`)
+}
+
 export const startTraining = (config: any) => {
     return api.post('/train/', config)
 }
