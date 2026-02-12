@@ -1,16 +1,23 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { uploadFile } from '../api'
+import { ref, onMounted } from 'vue'
+import { uploadFile, getDatasets, deleteDataset, getDatasetDownloadUrl, getDatasetInfo } from '../api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@iconify/vue'
 
+const datasets = ref<string[]>([])
 const previewData = ref<any[]>([])
 const columns = ref<string[]>([])
 const currentFilename = ref('')
 const isUploading = ref(false)
 const selectedFile = ref<File | null>(null)
 const isConfirmed = ref(false)
+
+// 独立的查看预览状态
+const viewPreviewData = ref<any[]>([])
+const viewPreviewColumns = ref<string[]>([])
+const viewPreviewFilename = ref('')
+const isLoadingPreview = ref(false)
 
 const handleFileChange = async (event: any) => {
   const file = event.target.files[0]
@@ -66,6 +73,7 @@ const confirmUpload = async () => {
       isConfirmed.value = true
       // Now save to localStorage
       localStorage.setItem('dataset_filename', res.filename)
+      await fetchDatasets()
     }
   } catch (error) {
     console.error(error)
@@ -81,6 +89,54 @@ const cancelUpload = () => {
   selectedFile.value = null
   isConfirmed.value = false
 }
+
+const fetchDatasets = async () => {
+    try {
+        const res: any = await getDatasets()
+        datasets.value = res
+    } catch (error) {
+        console.error("Failed to fetch datasets", error)
+    }
+}
+
+const handleDelete = async (filename: string) => {
+    if(!confirm(`确定要删除 ${filename} 吗?`)) return
+    try {
+        await deleteDataset(filename)
+        await fetchDatasets()
+        if (currentFilename.value === filename) {
+             cancelUpload()
+        }
+    } catch (error) {
+        console.error("Failed to delete dataset", error)
+    }
+}
+
+const handleDownload = (filename: string) => {
+    // Open in new tab which will trigger download
+    // Use the full URL with base path included via proxy or logic
+    // Since we are in SPA, we can just use the url relative to current origin if proxy is set up
+    // getDatasetDownloadUrl returns `/api/...`
+    window.open(getDatasetDownloadUrl(filename), '_blank')
+}
+
+const handlePreview = async (filename: string) => {
+    isLoadingPreview.value = true
+    try {
+        const res: any = await getDatasetInfo(filename)
+        viewPreviewData.value = res.preview
+        viewPreviewColumns.value = res.columns
+        viewPreviewFilename.value = res.filename
+    } catch (error) {
+        console.error("Failed to load dataset info", error)
+    } finally {
+        isLoadingPreview.value = false
+    }
+}
+
+onMounted(() => {
+    fetchDatasets()
+})
 </script>
 
 <template>
@@ -126,11 +182,52 @@ const cancelUpload = () => {
       </CardContent>
     </Card>
 
+    <Card>
+      <CardHeader>
+        <CardTitle>已上传数据集</CardTitle>
+        <CardDescription>管理已上传到服务器的数据集文件</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div v-if="datasets.length === 0" class="text-center text-gray-500 py-8">
+            暂无数据集，请上传
+        </div>
+        <div v-else class="relative overflow-x-auto rounded-md border">
+            <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                    <tr>
+                        <th scope="col" class="px-6 py-3">文件名</th>
+                        <th scope="col" class="px-6 py-3 text-right">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="file in datasets" :key="file" class="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white">
+                            {{ file }}
+                        </td>
+                        <td class="px-6 py-4 text-right flex justify-end gap-2">
+                             <Button variant="outline" size="sm" @click="handlePreview(file)">
+                                <Icon icon="lucide:eye" class="w-4 h-4 mr-1" /> 预览
+                             </Button>
+                             <Button variant="outline" size="sm" @click="handleDownload(file)">
+                                <Icon icon="lucide:download" class="w-4 h-4 mr-1" /> 下载
+                             </Button>
+                             <Button variant="destructive" size="sm" @click="handleDelete(file)">
+                                <Icon icon="lucide:trash-2" class="w-4 h-4 mr-1" /> 删除
+                             </Button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+      </CardContent>
+    </Card>
+
+    <!-- 上传文件的预览卡片 -->
     <Card v-if="previewData.length > 0">
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
-           <Icon icon="lucide:table" />
-           数据预览 ({{ currentFilename }})
+           <Icon icon="lucide:upload" />
+           上传文件预览 ({{ currentFilename }})
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -146,6 +243,44 @@ const cancelUpload = () => {
                 <tbody>
                     <tr v-for="(row, idx) in previewData" :key="idx" class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
                         <td v-for="col in columns" :key="col" class="px-6 py-4 whitespace-nowrap">
+                            {{ row[col] }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+      </CardContent>
+    </Card>
+
+    <!-- 查看已存在文件的预览卡片 -->
+    <Card v-if="viewPreviewData.length > 0">
+      <CardHeader>
+        <CardTitle class="flex items-center gap-2">
+           <Icon icon="lucide:table" />
+           数据预览 ({{ viewPreviewFilename }})
+        </CardTitle>
+        <CardDescription>
+          <Button variant="ghost" size="sm" @click="viewPreviewData = []; viewPreviewColumns = []; viewPreviewFilename = ''">
+            <Icon icon="lucide:x" class="w-4 h-4 mr-1" /> 关闭预览
+          </Button>
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div v-if="isLoadingPreview" class="flex justify-center items-center py-8">
+          <Icon icon="lucide:loader-2" class="w-8 h-8 animate-spin text-gray-400" />
+        </div>
+        <div v-else class="relative overflow-x-auto rounded-md border">
+            <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                    <tr>
+                        <th v-for="col in viewPreviewColumns" :key="col" scope="col" class="px-6 py-3 whitespace-nowrap">
+                            {{ col }}
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="(row, idx) in viewPreviewData" :key="idx" class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
+                        <td v-for="col in viewPreviewColumns" :key="col" class="px-6 py-4 whitespace-nowrap">
                             {{ row[col] }}
                         </td>
                     </tr>

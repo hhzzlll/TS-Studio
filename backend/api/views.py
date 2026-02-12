@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.conf import settings
+from django.http import FileResponse
 from .models import TrainingModel
 from .serializers import TrainingModelSerializer
 import sys
@@ -143,6 +144,38 @@ class DatasetListView(APIView):
         files = [f for f in os.listdir(data_dir) if f.lower().endswith(('.csv', '.xlsx'))]
         print(f"DatasetListView: Found files: {files}")
         return Response(files)
+
+    def delete(self, request):
+        filename = request.query_params.get('filename')
+        if not filename:
+            return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        file_path = os.path.join(data_dir, filename)
+        
+        if not os.path.exists(file_path):
+             return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            os.remove(file_path)
+            # Also try to clean up any cached analysis if exists? (Optional)
+            return Response({'status': 'success', 'message': f'{filename} deleted'})
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class DatasetDownloadView(APIView):
+    def get(self, request):
+        filename = request.query_params.get('filename')
+        if not filename:
+             return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
+             
+        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        file_path = os.path.join(data_dir, filename)
+        
+        if not os.path.exists(file_path):
+             return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
+             
+        return FileResponse(open(file_path, 'rb'), as_attachment=True, filename=filename)
 
 class DatasetInfoView(APIView):
     def get(self, request):

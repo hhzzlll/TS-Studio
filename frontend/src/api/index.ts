@@ -81,3 +81,11 @@ export const controlTraining = (jobId: string | number, action: 'pause' | 'resum
 export const runPrediction = (params: any) => {
     return api.post('/predict/', params)
 }
+
+export const deleteDataset = (filename: string) => {
+    return api.delete(`/datasets/?filename=${filename}`)
+}
+
+export const getDatasetDownloadUrl = (filename: string) => {
+    return `/api/datasets/download/?filename=${filename}`
+}

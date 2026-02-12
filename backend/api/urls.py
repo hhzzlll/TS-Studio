@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import FileUploadView, TrainingView, ConfigView, TrainingStatusView, PredictView, PredictionResultView, ActiveTrainingView, DatasetListView, DatasetInfoView, CompletedModelsView, StatisticalAnalysisView, ColumnAnalysisView
+from .views import FileUploadView, TrainingView, ConfigView, TrainingStatusView, PredictView, PredictionResultView, ActiveTrainingView, DatasetListView, DatasetInfoView, CompletedModelsView, StatisticalAnalysisView, ColumnAnalysisView, DatasetDownloadView
 from .extra_views import TrainingControlView
 
 urlpatterns = [
@@ -8,6 +8,7 @@ urlpatterns = [
     path('datasets/info/', DatasetInfoView.as_view(), name='dataset-info'),
     path('datasets/analysis/', StatisticalAnalysisView.as_view(), name='dataset-analysis'),
     path('datasets/column-analysis/', ColumnAnalysisView.as_view(), name='column-analysis'),
+    path('datasets/download/', DatasetDownloadView.as_view(), name='dataset-download'),
     path('models/completed/', CompletedModelsView.as_view(), name='completed-models'),
     path('config/', ConfigView.as_view(), name='config'),
     path('train/', TrainingView.as_view(), name='train'),
