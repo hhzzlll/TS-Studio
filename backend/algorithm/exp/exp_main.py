@@ -393,6 +393,7 @@ class Exp_Main(Exp_Basic):
 
                     pred = outputs.detach().cpu().numpy()
                     true = batch_y.detach().cpu().numpy()
+                    inps.append(batch_x.detach().cpu().numpy())
                     return_mean_i = mean
                     return_label_i = label_part
 
@@ -497,6 +498,7 @@ class Exp_Main(Exp_Basic):
         # print("preds", np.shape(preds))
         preds = preds.reshape(-1, trues.shape[-2], trues.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
+        inps = inps.reshape(-1, inps.shape[-2], inps.shape[-1])
         if self.args.sample_times > 1:
             all_generated_samples = all_generated_samples.reshape(-1, self.args.sample_times , trues.shape[-2], trues.shape[-1])
             # print('test shape:', preds.shape, trues.shape, all_generated_samples.shape)
@@ -519,6 +521,7 @@ class Exp_Main(Exp_Basic):
              
              np.save(os.path.join(folder_path, 'preds.npy'), preds)
              np.save(os.path.join(folder_path, 'trues.npy'), trues)
+             np.save(os.path.join(folder_path, 'history.npy'), inps)
              print(f"Saved preds.npy and trues.npy to {folder_path}")
         except Exception as e:
              print(f"Failed to save result arrays: {e}")

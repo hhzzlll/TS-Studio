@@ -44,6 +44,10 @@ export const getDatasets = () => {
     return api.get('/datasets/')
 }
 
+export const getDatasetColumns = (filename: string) => {
+    return api.get(`/datasets/${filename}/columns/`)
+}
+
 export const getDatasetInfo = (filename: string) => {
     return api.get(`/datasets/info/?filename=${filename}`)
 }
@@ -88,4 +92,12 @@ export const deleteDataset = (filename: string) => {
 
 export const getDatasetDownloadUrl = (filename: string) => {
     return `/api/datasets/download/?filename=${filename}`
+}
+
+export const getTraditionalModels = () => {
+    return api.get('/traditional-models/')
+}
+
+export const predictWithTraditionalModel = (params: any) => {
+    return api.post('/traditional-models/predict/', params)
 }

@@ -145,6 +145,28 @@ class DatasetListView(APIView):
         print(f"DatasetListView: Found files: {files}")
         return Response(files)
 
+class DatasetColumnsView(APIView):
+    def get(self, request, filename):
+        base_dir = str(settings.BASE_DIR)
+        data_dir = os.path.join(base_dir, 'data')
+        file_path = os.path.join(data_dir, filename)
+        
+        if not os.path.exists(file_path):
+            return Response({'error': 'File not found'}, status=404)
+            
+        try:
+            if filename.lower().endswith('.csv'):
+                df = pd.read_csv(file_path, nrows=0) 
+            elif filename.lower().endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(file_path, nrows=0)
+            else:
+                return Response({'error': 'Unsupported format'}, status=400)
+                
+            cols = df.columns.tolist()
+            return Response({'columns': cols})
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
     def delete(self, request):
         filename = request.query_params.get('filename')
         if not filename:
@@ -806,6 +828,7 @@ class PredictionResultView(APIView):
             
             preds_path = os.path.join(folder_path, 'preds.npy')
             trues_path = os.path.join(folder_path, 'trues.npy')
+            history_path = os.path.join(folder_path, 'history.npy')
             
             if not os.path.exists(preds_path):
                  # Try absolute path or project root logic
@@ -814,6 +837,7 @@ class PredictionResultView(APIView):
                  folder_path = os.path.join(base_dir, 'checkpoints', setting)
                  preds_path = os.path.join(folder_path, 'preds.npy')
                  trues_path = os.path.join(folder_path, 'trues.npy')
+                 history_path = os.path.join(folder_path, 'history.npy')
 
             if not os.path.exists(preds_path):
                 return Response({'error': f'Results not found at {folder_path}'}, status=404)
@@ -822,19 +846,131 @@ class PredictionResultView(APIView):
             preds = np.load(preds_path)
             trues = np.load(trues_path)
             
+            history = []
+            if os.path.exists(history_path):
+                history = np.load(history_path)
+            
             # preds shape: (Samples, PredLen, Dims)
             # Return first N samples
             limit = int(request.query_params.get('limit', 10))
             
-            return Response({
+            response_data = {
                 'preds': preds[:limit].tolist(),
                 'trues': trues[:limit].tolist(),
                 'shape': preds.shape,
                 'setting': setting
-            })
+            }
+            if len(history) > 0:
+                response_data['history'] = history[:limit].tolist()
+            
+            return Response(response_data)
 
         except TrainingModel.DoesNotExist:
             return Response({'error': 'Job not found'}, status=404)
         except Exception as e:
             traceback.print_exc()
             return Response({'error': str(e)}, status=500)
+
+
+class TraditionalModelListView(APIView):
+    """获取可用的传统模型列表"""
+    def get(self, request):
+        models = [
+            {
+                'id': 'arima',
+                'name': 'ARIMA',
+                'description': '自回归移动平均模型，适用于线性时间序列'
+            },
+            {
+                'id': 'exponential_smoothing',
+                'name': '指数平滑',
+                'description': '基于加权平均的预测方法，适用于有趋势的数据'
+            },
+            {
+                'id': 'moving_average',
+                'name': '移动平均',
+                'description': '基于历史平均值的简单预测方法'
+            },
+            {
+                'id': 'prophet',
+                'name': 'Prophet',
+                'description': 'Facebook开发的时间序列预测工具，适用于有季节性的数据'
+            }
+        ]
+        return Response(models)
+
+
+class TraditionalModelPredictView(APIView):
+    """使用传统模型进行预测"""
+    def post(self, request):
+        from .traditional_models import load_and_predict
+        
+        try:
+            # 获取参数
+            model_type = request.data.get('model_type', 'arima')
+            dataset_name = request.data.get('dataset_name')
+            filename = request.data.get('filename')
+            pred_len = int(request.data.get('pred_len', 14))
+            seq_len = int(request.data.get('seq_len', 192))
+            features = request.data.get('features', 'M')
+            target_col = request.data.get('target_col', None)
+            limit = int(request.data.get('limit', 50))
+            
+            # 支持动态超参数
+            model_params = request.data.get('model_params', {})
+            
+            # 确定数据集路径
+            if filename:
+                dataset_path = os.path.join(settings.BASE_DIR, 'data', filename)
+            elif dataset_name:
+                # 尝试常见文件格式
+                for ext in ['.csv', '.xlsx']:
+                    path = os.path.join(settings.BASE_DIR, 'data', dataset_name + ext)
+                    if os.path.exists(path):
+                        dataset_path = path
+                        break
+                else:
+                    return Response({
+                        'error': f'Dataset {dataset_name} not found'
+                    }, status=status.HTTP_404_NOT_FOUND)
+            else:
+                return Response({
+                    'error': 'Please provide dataset_name or filename'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not os.path.exists(dataset_path):
+                return Response({
+                    'error': f'Dataset file not found: {dataset_path}'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # 运行预测
+            result = load_and_predict(
+                dataset_path=dataset_path,
+                model_type=model_type,
+                pred_len=pred_len,
+                seq_len=seq_len,
+                target_col=target_col,
+                features=features,
+                model_params=model_params
+            )
+            
+            # 限制返回的样本数
+            preds = result['preds'][:limit]
+            trues = result['trues'][:limit]
+            histories = result['history'][:limit]
+            
+            return Response({
+                'preds': preds.tolist(),
+                'trues': trues.tolist(),
+                'history': histories.tolist(),
+                'shape': list(preds.shape),
+                'model_type': model_type,
+                'status': 'success'
+            })
+            
+        except Exception as e:
+            traceback.print_exc()
+            return Response({
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
