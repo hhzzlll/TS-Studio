@@ -6,9 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Icon } from '@iconify/vue'
 import * as echarts from 'echarts'
 
-// 模型类型：'deep' 深度学习模型, 'traditional' 传统模型
-const modelCategory = ref<'deep' | 'traditional'>('deep')
-
 // 深度学习模型相关
 const deepModels = ref<any[]>([])
 const selectedDeepModelId = ref<string>('')
@@ -22,6 +19,7 @@ const datasetColumns = ref<string[]>([])
 const selectedColumn = ref<string>('')
 const predLen = ref<number>(14)
 const seqLen = ref<number>(192)
+const compareWithTraditional = ref(false)
 
 // 传统模型的高级参数
 const modelParams = ref<any>({
@@ -36,7 +34,8 @@ const modelParams = ref<any>({
 })
 
 const loading = ref(false)
-const resultData = ref<any>(null)
+const deepResult = ref<any>(null)
+const traditionalResult = ref<any>(null)
 const sampleIndex = ref(0)
 const totalSamples = ref(0)
 const chartRef = ref<HTMLElement | null>(null)
@@ -94,35 +93,21 @@ watch(selectedDataset, () => {
     fetchColumns()
 })
 
-// 切换模型类型
-const handleCategoryChange = () => {
-  resultData.value = null
-  sampleIndex.value = 0
-  totalSamples.value = 0
-}
-
 // 运行深度学习模型预测
 const handleDeepModelPredict = async () => {
     if (!selectedDeepModelId.value) return
-    loading.value = true
     try {
-        const res: any = await getPredictionResult(Number(selectedDeepModelId.value), 50)
-        resultData.value = res
-        totalSamples.value = res.preds.length
-        sampleIndex.value = 0
-        renderChart()
+    const res: any = await getPredictionResult(Number(selectedDeepModelId.value), 50)
+    return res
     } catch (e) {
         console.error(e)
-        resultData.value = null
-    } finally {
-        loading.value = false
+    return null
     }
 }
 
 // 运行传统模型预测
 const handleTraditionalModelPredict = async () => {
     if (!selectedDataset.value || !selectedTraditionalModel.value || !selectedColumn.value) return
-    loading.value = true
     try {
         const res: any = await predictWithTraditionalModel({
             model_type: selectedTraditionalModel.value,
@@ -134,30 +119,39 @@ const handleTraditionalModelPredict = async () => {
             limit: 50,
             model_params: modelParams.value
         })
-        
-        resultData.value = res
-        totalSamples.value = res.preds.length
-        sampleIndex.value = 0
-        renderChart()
+    return res
     } catch (e) {
         console.error(e)
-        resultData.value = null
-    } finally {
-        loading.value = false
+    return null
     }
 }
 
-// 统一的预测处理
-const handlePredict = () => {
-  if (modelCategory.value === 'deep') {
-    handleDeepModelPredict()
-  } else {
-    handleTraditionalModelPredict()
+const handlePredict = async () => {
+  if (!selectedDeepModelId.value) return
+  if (compareWithTraditional.value && (!selectedDataset.value || !selectedColumn.value)) return
+
+  loading.value = true
+  try {
+    const [deepRes, traditionalRes] = await Promise.all([
+      handleDeepModelPredict(),
+      compareWithTraditional.value ? handleTraditionalModelPredict() : Promise.resolve(null)
+    ])
+
+    deepResult.value = deepRes
+    traditionalResult.value = traditionalRes
+
+    const deepSamples = deepRes?.preds?.length || 0
+    const traditionalSamples = traditionalRes?.preds?.length || deepSamples
+    totalSamples.value = compareWithTraditional.value ? Math.min(deepSamples, traditionalSamples) : deepSamples
+    sampleIndex.value = 0
+    renderChart()
+  } finally {
+    loading.value = false
   }
 }
 
 const renderChart = async () => {
-    if (!resultData.value) return
+  if (!deepResult.value) return
     
     await nextTick()
     if (!chartRef.value) return
@@ -168,16 +162,19 @@ const renderChart = async () => {
         myChart = echarts.init(chartRef.value)
     }
 
-    const inputData = resultData.value
+    const inputData = deepResult.value
     const pred = inputData.preds[sampleIndex.value]
     const true_ = inputData.trues[sampleIndex.value]
-    // Check if history exists
     const history = inputData.history ? inputData.history[sampleIndex.value] : []
+    const traditionalPred = compareWithTraditional.value && traditionalResult.value
+      ? traditionalResult.value.preds[sampleIndex.value]
+      : null
     
     const predLen = pred.length
     const historyLen = history.length
     const dims = pred[0].length
-    const dimToShow = dims - 1 
+    const dimToShow = dims - 1
+    const traditionalDim = traditionalPred?.[0]?.length ? traditionalPred[0].length - 1 : 0
     
     // Total length for x-axis
     const totalLen = historyLen + predLen
@@ -187,6 +184,7 @@ const renderChart = async () => {
     const historyDataFull = new Array(totalLen).fill(null)
     const trueDataFull = new Array(totalLen).fill(null)
     const predDataFull = new Array(totalLen).fill(null)
+    const traditionalDataFull = new Array(totalLen).fill(null)
     
     for(let i=0; i<historyLen; i++) {
         historyDataFull[i] = history[i][dimToShow]
@@ -195,13 +193,12 @@ const renderChart = async () => {
     for(let i=0; i<predLen; i++) {
         trueDataFull[historyLen + i] = true_[i][dimToShow]
         predDataFull[historyLen + i] = pred[i][dimToShow]
-        
-        // Connect lines visually if history exists
-        if (i === 0 && historyLen > 0) {
-            // Optional: add last point of history to start of future to connect them?
-            // ECharts handles nulls by breaking the line.
-            // If we want connected lines, we should duplicate the connection point.
-            // But let's keeping it separated is often clearer for "history vs future".
+      }
+
+      if (traditionalPred) {
+        const usableLen = Math.min(predLen, traditionalPred.length)
+        for (let i = 0; i < usableLen; i++) {
+          traditionalDataFull[historyLen + i] = traditionalPred[i][traditionalDim]
         }
     }
     
@@ -213,7 +210,9 @@ const renderChart = async () => {
             trigger: 'axis'
         },
         legend: {
-            data: ['历史数据', '真实值', '预测值']
+          data: compareWithTraditional.value
+            ? ['历史数据', '真实值', '深度学习预测', '传统模型预测']
+            : ['历史数据', '真实值', '深度学习预测']
         },
         grid: {
             left: '3%',
@@ -247,12 +246,21 @@ const renderChart = async () => {
                 showSymbol: false
             },
             {
-                name: '预测值',
+              name: '深度学习预测',
+              type: 'line',
+              data: predDataFull,
+              itemStyle: { color: '#5470c6' },
+              showSymbol: false
+            },
+            ...(traditionalPred ? [
+              {
+                name: '传统模型预测',
                 type: 'line',
-                data: predDataFull,
-                itemStyle: { color: '#5470c6' },
+                data: traditionalDataFull,
+                itemStyle: { color: '#ee6666' },
                 showSymbol: false
-            }
+              }
+            ] : [])
         ]
     }
     
@@ -263,39 +271,24 @@ watch(sampleIndex, () => {
     renderChart()
 })
 
+watch(compareWithTraditional, () => {
+  if (!deepResult.value) return
+  if (compareWithTraditional.value && traditionalResult.value) {
+    totalSamples.value = Math.min(deepResult.value.preds.length, traditionalResult.value.preds.length)
+  } else {
+    totalSamples.value = deepResult.value.preds.length
+  }
+  sampleIndex.value = Math.min(sampleIndex.value, Math.max(0, totalSamples.value - 1))
+  renderChart()
+})
+
 </script>
 
 <template>
   <div class="space-y-6">
     <!-- 模型类型选择 -->
-    <Card>
-      <CardHeader>
-        <CardTitle>选择预测模型类型</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div class="flex gap-4">
-          <Button 
-            :variant="modelCategory === 'deep' ? 'default' : 'outline'"
-            @click="modelCategory = 'deep'; handleCategoryChange()"
-            class="flex-1"
-          >
-            <Icon icon="lucide:brain-circuit" class="mr-2" />
-            深度学习模型
-          </Button>
-          <Button 
-            :variant="modelCategory === 'traditional' ? 'default' : 'outline'"
-            @click="modelCategory = 'traditional'; handleCategoryChange()"
-            class="flex-1"
-          >
-            <Icon icon="lucide:trending-up" class="mr-2" />
-            传统模型
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-
     <!-- 深度学习模型选项 -->
-    <Card v-if="modelCategory === 'deep'">
+    <Card>
       <CardHeader>
         <CardTitle>深度学习模型预测</CardTitle>
       </CardHeader>
@@ -312,11 +305,19 @@ watch(sampleIndex, () => {
               </option>
             </select>
           </div>
-          <Button @click="handlePredict" :disabled="loading || !selectedDeepModelId">
+          <Button
+            @click="handlePredict"
+            :disabled="loading || !selectedDeepModelId || (compareWithTraditional && (!selectedDataset || !selectedColumn))"
+          >
             <Icon v-if="loading" icon="lucide:loader-2" class="animate-spin mr-2" />
             <Icon v-else icon="lucide:play" class="mr-2" />
             开始预测
           </Button>
+        </div>
+        <div class="mt-4 flex items-center gap-2 text-sm">
+          <input v-model="compareWithTraditional" id="compare_traditional" type="checkbox" />
+          <label for="compare_traditional" class="font-medium">与传统模型对比</label>
+          <span class="text-muted-foreground">开启后可设置传统模型参数并在同一张图中对比</span>
         </div>
         <div v-if="deepModels.length === 0" class="text-center py-4 text-muted-foreground">
           暂无已完成的训练模型。请先去训练一个模型。
@@ -325,9 +326,9 @@ watch(sampleIndex, () => {
     </Card>
 
     <!-- 传统模型选项 -->
-    <Card v-if="modelCategory === 'traditional'">
+    <Card v-if="compareWithTraditional">
       <CardHeader>
-        <CardTitle>传统模型预测</CardTitle>
+        <CardTitle>传统模型配置</CardTitle>
       </CardHeader>
       <CardContent class="space-y-4">
         <div class="grid grid-cols-2 gap-4">
@@ -517,14 +518,6 @@ watch(sampleIndex, () => {
           </div>
         </div>
           
-        <div class="flex items-end mt-4">
-          <Button @click="handlePredict" :disabled="loading || !selectedDataset || !selectedColumn" class="w-full">
-            <Icon v-if="loading" icon="lucide:loader-2" class="animate-spin mr-2" />
-            <Icon v-else icon="lucide:play" class="mr-2" />
-            开始预测
-          </Button>
-        </div>
-        
         <div v-if="datasets.length === 0" class="text-center py-4 text-muted-foreground">
           暂无可用数据集。请先上传数据。
         </div>
@@ -532,7 +525,7 @@ watch(sampleIndex, () => {
     </Card>
 
     <!-- 预测结果展示 -->
-    <Card v-if="resultData">
+    <Card v-if="deepResult">
       <CardHeader>
         <CardTitle class="flex justify-between items-center">
           <span>预测结果对比</span>
@@ -553,15 +546,9 @@ watch(sampleIndex, () => {
       </CardContent>
     </Card>
     
-    <Card v-else-if="!loading && modelCategory === 'deep' && deepModels.length > 0">
+    <Card v-else-if="!loading && deepModels.length > 0">
       <CardContent class="text-center py-10 text-muted-foreground">
         请选择模型并点击"开始预测"按钮。
-      </CardContent>
-    </Card>
-    
-    <Card v-else-if="!loading && modelCategory === 'traditional' && datasets.length > 0">
-      <CardContent class="text-center py-10 text-muted-foreground">
-        请选择模型和数据集，配置参数后点击"开始预测"按钮。
       </CardContent>
     </Card>
   </div>
