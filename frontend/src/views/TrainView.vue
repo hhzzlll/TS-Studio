@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted, onMounted, watch, nextTick } from 'vue'
+import { ref, onUnmounted, onMounted } from 'vue'
 import { startTraining, getTrainingStatus, controlTraining, getActiveTraining, getDatasets, getDatasetInfo } from '../api' 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@iconify/vue'
-import * as echarts from 'echarts'
 
 // Define interface for config
 interface ConfigForm {
@@ -40,61 +39,6 @@ const isTraining = ref(false)
 const trainingJobs = ref<any[]>([])
 const activeTab = ref('monitor') // monitor, history
 let pollInterval: any = null
-let conversionChart: echarts.ECharts | null = null;
-const chartRef = ref<HTMLElement | null>(null);
-
-// Mock data for chart visualization (placeholder until backend sends real loss)
-const lossData = ref<{epoch: number, loss: number}[]>([])
-
-const initChart = () => {
-    if (!chartRef.value) return
-    conversionChart = echarts.init(chartRef.value)
-    const option = {
-        title: { text: 'Training Loss', left: 'center', textStyle: { fontSize: 14, color: '#666' } },
-        tooltip: { trigger: 'axis' },
-        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'category', boundaryGap: false, data: [] },
-        yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
-        series: [{
-            name: 'Loss',
-            type: 'line',
-            smooth: true,
-            data: [],
-            areaStyle: {
-                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                    { offset: 0, color: 'rgba(59, 130, 246, 0.5)' },
-                    { offset: 1, color: 'rgba(59, 130, 246, 0.0)' }
-                ])
-            },
-            itemStyle: { color: '#3b82f6' }
-        }]
-    }
-    conversionChart.setOption(option)
-}
-
-const updateChart = () => {
-    if (!conversionChart) return
-    // In a real scenario, we would parse loss history from job.metrics or job.log
-    // For now, we just clear it or show dummy data if running
-    conversionChart.setOption({
-        xAxis: { data: lossData.value.map(d => d.epoch) },
-        series: [{ data: lossData.value.map(d => d.loss) }]
-    })
-}
-
-// Watch for active tab to resize chart
-watch(activeTab, async (val) => {
-    if (val === 'monitor') {
-        await nextTick()
-        if (!conversionChart) initChart()
-        else conversionChart.resize()
-    }
-})
-
-// Window resize handler
-window.addEventListener('resize', () => {
-    conversionChart?.resize()
-})
 
 const getStatusText = (job: any) => {
     if (job.status === 'running' && job.metrics && job.metrics.stage) {
@@ -171,8 +115,6 @@ const handleTrain = async () => {
 
         const res: any = await startTraining(payload)
         trainingJobs.value.unshift(res)
-        // Reset loss data for new job
-        lossData.value = [] 
         activeTab.value = 'monitor'
         startPolling()
     } catch (e) {
@@ -258,8 +200,6 @@ onMounted(async () => {
             startPolling()
         }
         
-        // Initialize chart
-        initChart()
     } catch (e) {
         console.error("Error in onMounted:", e)
     }
@@ -267,7 +207,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
     if (pollInterval) clearInterval(pollInterval)
-    conversionChart?.dispose()
 })
 </script>
 
@@ -500,19 +439,8 @@ onUnmounted(() => {
                     </CardContent>
                 </Card>
 
-                <!-- Chart & Logs -->
+                <!-- Logs -->
                 <div class="grid grid-cols-1 gap-6">
-                    <Card class="col-span-1">
-                         <CardHeader class="pb-2">
-                            <CardTitle class="text-base font-medium">Loss 趋势监控</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                             <div ref="chartRef" class="w-full h-64 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-dashed flex items-center justify-center relative">
-                                <!-- Chart will be rendered here -->
-                             </div>
-                        </CardContent>
-                    </Card>
-
                     <Card class="flex-1 flex flex-col min-h-[200px]">
                         <CardHeader class="pb-2 bg-slate-950 text-slate-100 rounded-t-lg">
                             <CardTitle class="text-base font-mono flex items-center gap-2 text-xs">
@@ -520,9 +448,9 @@ onUnmounted(() => {
                             </CardTitle>
                         </CardHeader>
                         <CardContent class="flex-1 p-0">
-                            <div class="bg-slate-950 text-slate-300 font-mono text-xs p-4 h-full min-h-[200px] max-h-[300px] overflow-auto whitespace-pre-wrap rounded-b-lg">
+                            <div class="bg-slate-950 text-slate-300 font-mono text-xs p-4 h-full min-h-[200px] whitespace-pre-wrap rounded-b-lg">
                                 <div v-if="trainingJobs[0].log">{{ trainingJobs[0].log }}</div>
-                                <div v-else class="opacity-50 italic">Waiting for logs...</div>
+                                <div v-else class="opacity-50 italic">暂无日志输出</div>
                             </div>
                         </CardContent>
                     </Card>

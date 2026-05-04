@@ -2,6 +2,7 @@
 传统时间序列预测模型
 支持: ARIMA, Prophet, Exponential Smoothing, Simple LSTM
 """
+import os
 import numpy as np
 import pandas as pd
 import warnings
@@ -37,6 +38,32 @@ class TraditionalPredictor:
             return self._moving_average_predict(data, pred_len, seq_len)
         else:
             raise ValueError(f"Unknown model type: {self.model_type}")
+
+    def predict_on_histories(self, histories, pred_len=14):
+        """
+        基于给定历史窗口进行预测
+
+        Args:
+            histories: numpy array, shape (samples, seq_len, dims)
+            pred_len: int, 预测长度
+
+        Returns:
+            predictions: numpy array, shape (samples, pred_len, dims)
+        """
+        predictions = []
+        for history in histories:
+            if self.model_type == 'arima':
+                pred = self._arima_predict_single(history, pred_len)
+            elif self.model_type == 'prophet':
+                pred = self._prophet_predict_single(history, pred_len)
+            elif self.model_type == 'exponential_smoothing':
+                pred = self._exp_smoothing_predict_single(history, pred_len)
+            elif self.model_type == 'moving_average':
+                pred = self._moving_average_predict_single(history, pred_len)
+            else:
+                raise ValueError(f"Unknown model type: {self.model_type}")
+            predictions.append(pred)
+        return np.array(predictions)
     
     def _arima_predict(self, data, pred_len, seq_len):
         """ARIMA模型预测"""
@@ -105,6 +132,42 @@ class TraditionalPredictor:
             histories.append(history)
         
         return np.array(predictions), np.array(ground_truth), np.array(histories)
+
+    def _arima_predict_single(self, history, pred_len):
+        """ARIMA模型单样本预测"""
+        try:
+            from statsmodels.tsa.arima.model import ARIMA
+        except ImportError:
+            from statsmodels.tsa.arima_model import ARIMA
+
+        n_dims = history.shape[1] if len(history.shape) > 1 else 1
+        pred_sample = []
+        for dim in range(n_dims):
+            try:
+                ts = history[:, dim] if n_dims > 1 else history
+                p = int(self.model_params.get('p', 1))
+                d = int(self.model_params.get('d', 1))
+                q = int(self.model_params.get('q', 1))
+
+                use_seasonal = self.model_params.get('use_seasonal', False)
+                seasonal_order = (0, 0, 0, 0)
+                if use_seasonal:
+                    P = int(self.model_params.get('P', 1))
+                    D = int(self.model_params.get('D', 1))
+                    Q = int(self.model_params.get('Q', 1))
+                    s = int(self.model_params.get('s', 12))
+                    seasonal_order = (P, D, Q, s)
+
+                model = ARIMA(ts, order=(p, d, q), seasonal_order=seasonal_order, enforce_stationarity=False, enforce_invertibility=False)
+                model_fit = model.fit()
+                forecast = model_fit.forecast(steps=pred_len)
+                pred_sample.append(forecast)
+            except Exception as e:
+                print(f"[ARIMA Error] {e}")
+                last_val = ts[-1]
+                forecast = np.full(pred_len, last_val)
+                pred_sample.append(forecast)
+        return np.array(pred_sample).T
     
     def _prophet_predict(self, data, pred_len, seq_len):
         """Prophet模型预测"""
@@ -185,6 +248,58 @@ class TraditionalPredictor:
             histories.append(history)
         
         return np.array(predictions), np.array(ground_truth), np.array(histories)
+
+    def _prophet_predict_single(self, history, pred_len):
+        """Prophet模型单样本预测"""
+        try:
+            from prophet import Prophet
+        except ImportError:
+            print("Prophet not installed, using moving average instead")
+            return self._moving_average_predict_single(history, pred_len)
+
+        n_dims = history.shape[1] if len(history.shape) > 1 else 1
+        pred_sample = []
+        for dim in range(n_dims):
+            try:
+                ts = history[:, dim] if n_dims > 1 else history.flatten()
+                df = pd.DataFrame({
+                    'ds': pd.date_range(start='2020-01-01', periods=len(ts), freq='h'),
+                    'y': ts
+                })
+
+                seasonality_mode = self.model_params.get('seasonality_mode', 'additive')
+                yearly_seasonality = self.model_params.get('yearly_seasonality', False)
+                weekly_seasonality = self.model_params.get('weekly_seasonality', 'auto')
+                daily_seasonality = self.model_params.get('daily_seasonality', True)
+
+                if str(yearly_seasonality).lower() in ['true', '1']:
+                    yearly_seasonality = True
+                if str(yearly_seasonality).lower() in ['false', '0']:
+                    yearly_seasonality = False
+                if str(daily_seasonality).lower() in ['true', '1']:
+                    daily_seasonality = True
+                if str(daily_seasonality).lower() in ['false', '0']:
+                    daily_seasonality = False
+
+                model = Prophet(
+                    seasonality_mode=seasonality_mode,
+                    yearly_seasonality=yearly_seasonality,
+                    weekly_seasonality=weekly_seasonality,
+                    daily_seasonality=daily_seasonality
+                )
+                model.fit(df)
+
+                future = model.make_future_dataframe(periods=pred_len, freq='h')
+                forecast = model.predict(future)
+                pred_values = forecast['yhat'].values[-pred_len:]
+                pred_sample.append(pred_values)
+            except Exception as e:
+                print(f"[Prophet Error] {e}")
+                last_val = ts[-1]
+                forecast = np.full(pred_len, last_val)
+                pred_sample.append(forecast)
+
+        return np.array(pred_sample).T
     
     def _exp_smoothing_predict(self, data, pred_len, seq_len):
         """指数平滑预测"""
@@ -241,6 +356,36 @@ class TraditionalPredictor:
             histories.append(history)
         
         return np.array(predictions), np.array(ground_truth), np.array(histories)
+
+    def _exp_smoothing_predict_single(self, history, pred_len):
+        """指数平滑单样本预测"""
+        from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+        n_dims = history.shape[1] if len(history.shape) > 1 else 1
+        pred_sample = []
+        for dim in range(n_dims):
+            try:
+                ts = history[:, dim] if n_dims > 1 else history
+                trend = self.model_params.get('trend', 'add')
+                seasonal = self.model_params.get('seasonal', None)
+                seasonal_periods = int(self.model_params.get('seasonal_periods', 24))
+
+                if str(trend).lower() in ['none', 'null', '']:
+                    trend = None
+                if str(seasonal).lower() in ['none', 'null', '']:
+                    seasonal = None
+
+                model = ExponentialSmoothing(ts, seasonal=seasonal, trend=trend, seasonal_periods=seasonal_periods if seasonal else None)
+                model_fit = model.fit()
+                forecast = model_fit.forecast(steps=pred_len)
+                pred_sample.append(forecast)
+            except Exception as e:
+                print(f"[Exp Smoothing Error] {e}")
+                last_val = ts[-1]
+                forecast = np.full(pred_len, last_val)
+                pred_sample.append(forecast)
+
+        return np.array(pred_sample).T
     
     def _moving_average_predict(self, data, pred_len, seq_len):
         """移动平均预测"""
@@ -294,6 +439,34 @@ class TraditionalPredictor:
             histories.append(history)
         
         return np.array(predictions), np.array(ground_truth), np.array(histories)
+
+    def _moving_average_predict_single(self, history, pred_len):
+        """移动平均单样本预测"""
+        n_dims = history.shape[1] if len(history.shape) > 1 else 1
+        pred_sample = []
+
+        window = int(self.model_params.get('window', min(20, history.shape[0] // 4)))
+        window = max(1, window)
+        ma_type = self.model_params.get('ma_type', 'simple')
+        weights = np.arange(1, window + 1) if ma_type == 'weighted' else None
+        weight_sum = np.sum(weights) if weights is not None else None
+
+        for dim in range(n_dims):
+            ts = history[:, dim] if n_dims > 1 else history.reshape(-1)
+            window_values = list(ts[-window:])
+            forecast = []
+            for _ in range(pred_len):
+                if ma_type == 'weighted':
+                    ma_value = float(np.sum(np.array(window_values) * weights) / weight_sum)
+                else:
+                    ma_value = float(np.mean(window_values))
+                forecast.append(ma_value)
+                window_values.append(ma_value)
+                if len(window_values) > window:
+                    window_values.pop(0)
+            pred_sample.append(np.array(forecast))
+
+        return np.array(pred_sample).T
 
 
 def load_and_predict(dataset_path, model_type='arima', pred_len=14, seq_len=192, 
@@ -368,4 +541,74 @@ def load_and_predict(dataset_path, model_type='arima', pred_len=14, seq_len=192,
         'history': histories,
         'shape': preds.shape,
         'model_type': model_type
+    }
+
+
+def load_and_predict_aligned(dataset_path, model_type='arima', pred_len=14, seq_len=192,
+                             target_col=None, features='M', model_params=None,
+                             dataset_name='Exchange', dataset_type='custom',
+                             freq='h', label_len=None, limit=50, step=None):
+    """
+    使用与深度学习一致的测试集窗口进行预测（对齐历史序列）
+    """
+    from backend.algorithm.data_provider.data_factory import data_provider
+
+    class Args:
+        pass
+
+    args = Args()
+    args.dataset_name = dataset_name or 'Exchange'
+    args.data = dataset_type or 'custom'
+    args.seq_len = int(seq_len)
+    args.pred_len = int(pred_len)
+    args.label_len = int(label_len) if label_len is not None else int(pred_len / 2)
+    args.features = features
+    args.target = target_col or 'OT'
+    args.embed = 'timeF'
+    args.freq = freq
+    args.batch_size = 64
+    args.test_batch_size = 64
+    args.num_workers = 0
+    args.root_path = os.path.dirname(dataset_path)
+    args.data_path = os.path.basename(dataset_path)
+
+    _, data_loader = data_provider(args, flag='test', shuffle_flag_train=False)
+
+    step = int(step) if step is not None else (args.seq_len + args.pred_len)
+    predictor = TraditionalPredictor(model_type=model_type, model_params=model_params)
+
+    predictions = []
+    ground_truth = []
+    histories = []
+
+    global_index = 0
+    for batch in data_loader:
+        batch_x, batch_y = batch[0], batch[1]
+        batch_x = batch_x.detach().cpu().numpy()
+        batch_y = batch_y.detach().cpu().numpy()
+
+        for i in range(batch_x.shape[0]):
+            if global_index % step == 0:
+                history = batch_x[i]
+                true_future = batch_y[i][-args.pred_len:]
+                pred_sample = predictor.predict_on_histories(np.expand_dims(history, axis=0), pred_len=args.pred_len)[0]
+
+                histories.append(history)
+                ground_truth.append(true_future)
+                predictions.append(pred_sample)
+
+                if limit is not None and len(predictions) >= int(limit):
+                    break
+            global_index += 1
+
+        if limit is not None and len(predictions) >= int(limit):
+            break
+
+    return {
+        'preds': np.array(predictions),
+        'trues': np.array(ground_truth),
+        'history': np.array(histories),
+        'shape': np.array(predictions).shape,
+        'model_type': model_type,
+        'aligned_with_dl': True
     }

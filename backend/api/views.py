@@ -910,7 +910,7 @@ class TraditionalModelListView(APIView):
 class TraditionalModelPredictView(APIView):
     """使用传统模型进行预测"""
     def post(self, request):
-        from .traditional_models import load_and_predict
+        from .traditional_models import load_and_predict, load_and_predict_aligned
         
         try:
             # 获取参数
@@ -922,6 +922,12 @@ class TraditionalModelPredictView(APIView):
             features = request.data.get('features', 'M')
             target_col = request.data.get('target_col', None)
             limit = int(request.data.get('limit', 50))
+            align_with_dl = bool(request.data.get('align_with_dl', False))
+
+            dataset_type = request.data.get('dataset_type', 'custom')
+            dataset_name = request.data.get('dataset_name', 'Exchange')
+            freq = request.data.get('freq', 'h')
+            label_len = request.data.get('label_len', None)
             
             # 支持动态超参数
             model_params = request.data.get('model_params', {})
@@ -951,15 +957,31 @@ class TraditionalModelPredictView(APIView):
                 }, status=status.HTTP_404_NOT_FOUND)
             
             # 运行预测
-            result = load_and_predict(
-                dataset_path=dataset_path,
-                model_type=model_type,
-                pred_len=pred_len,
-                seq_len=seq_len,
-                target_col=target_col,
-                features=features,
-                model_params=model_params
-            )
+            if align_with_dl:
+                result = load_and_predict_aligned(
+                    dataset_path=dataset_path,
+                    model_type=model_type,
+                    pred_len=pred_len,
+                    seq_len=seq_len,
+                    target_col=target_col,
+                    features=features,
+                    model_params=model_params,
+                    dataset_name=dataset_name,
+                    dataset_type=dataset_type,
+                    freq=freq,
+                    label_len=label_len,
+                    limit=limit
+                )
+            else:
+                result = load_and_predict(
+                    dataset_path=dataset_path,
+                    model_type=model_type,
+                    pred_len=pred_len,
+                    seq_len=seq_len,
+                    target_col=target_col,
+                    features=features,
+                    model_params=model_params
+                )
             
             # 限制返回的样本数
             preds = result['preds'][:limit]
