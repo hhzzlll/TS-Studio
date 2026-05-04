@@ -75,12 +75,29 @@ const handleDatasetChange = async () => {
     }
 }
 
+const resetColumnAnalysis = () => {
+    columnResult.value = null
+    columnErrorMsg.value = ''
+    myChart?.dispose()
+    diffChart?.dispose()
+    fftChart?.dispose()
+    myChart = null
+    diffChart = null
+    fftChart = null
+}
+
+const resetGeneralAnalysis = () => {
+    analysisResult.value = null
+    errorMsg.value = ''
+}
+
 const handleAnalyze = async () => {
     if (!selectedDataset.value) return
     
     isLoading.value = true
     errorMsg.value = ''
     analysisResult.value = null
+    resetColumnAnalysis()
     
     try {
         const res: any = await getDatasetAnalysis(selectedDataset.value)
@@ -99,6 +116,7 @@ const handleColumnAnalyze = async () => {
     isColumnLoading.value = true
     columnErrorMsg.value = ''
     columnResult.value = null
+    resetGeneralAnalysis()
     
     try {
         const res: any = await getColumnAnalysis(selectedDataset.value, selectedColumn.value)
