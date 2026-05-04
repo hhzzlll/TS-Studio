@@ -854,14 +854,21 @@ class PredictionResultView(APIView):
             # Return first N samples
             limit = int(request.query_params.get('limit', 10))
             
+            # 以 历史长度+预测长度 为步长采样，避免预测窗口重叠并跨越整段
+            step = seq_len + pred_len
+            preds = preds[::step][:limit]
+            trues = trues[::step][:limit]
+            if len(history) > 0:
+                history = history[::step][:limit]
+            
             response_data = {
-                'preds': preds[:limit].tolist(),
-                'trues': trues[:limit].tolist(),
+                'preds': preds.tolist(),
+                'trues': trues.tolist(),
                 'shape': preds.shape,
                 'setting': setting
             }
             if len(history) > 0:
-                response_data['history'] = history[:limit].tolist()
+                response_data['history'] = history.tolist()
             
             return Response(response_data)
 

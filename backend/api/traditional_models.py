@@ -53,7 +53,10 @@ class TraditionalPredictor:
         histories = []
         
         # 滚动预测
-        for i in range(min(n_samples, 50)):  # 限制样本数避免过长时间
+        for i in range(0, n_samples, pred_len + seq_len):
+            if len(predictions) >= 50:  # 限制样本数避免过长时间
+                break
+            
             # 获取历史数据和真实值
             history = data[i:i+seq_len]
             true_future = data[i+seq_len:i+seq_len+pred_len]
@@ -73,7 +76,16 @@ class TraditionalPredictor:
                     d = int(self.model_params.get('d', 1))
                     q = int(self.model_params.get('q', 1))
                     
-                    model = ARIMA(ts, order=(p, d, q), enforce_stationarity=False, enforce_invertibility=False)
+                    use_seasonal = self.model_params.get('use_seasonal', False)
+                    seasonal_order = (0, 0, 0, 0)
+                    if use_seasonal:
+                        P = int(self.model_params.get('P', 1))
+                        D = int(self.model_params.get('D', 1))
+                        Q = int(self.model_params.get('Q', 1))
+                        s = int(self.model_params.get('s', 12))
+                        seasonal_order = (P, D, Q, s)
+                    
+                    model = ARIMA(ts, order=(p, d, q), seasonal_order=seasonal_order, enforce_stationarity=False, enforce_invertibility=False)
                     model_fit = model.fit()
                     
                     # 预测
@@ -110,7 +122,10 @@ class TraditionalPredictor:
         ground_truth = []
         histories = []
         
-        for i in range(min(n_samples, 20)):
+        for i in range(0, n_samples, pred_len + seq_len):
+            if len(predictions) >= 20:
+                break
+            
             history = data[i:i+seq_len]
             true_future = data[i+seq_len:i+seq_len+pred_len]
             
@@ -121,7 +136,7 @@ class TraditionalPredictor:
             
             for dim in range(n_dims):
                 try:
-                    ts = history[:, dim] if n_dims > 1 else history
+                    ts = history[:, dim] if n_dims > 1 else history.flatten()
                     
                     # 准备Prophet数据格式
                     df = pd.DataFrame({
@@ -182,7 +197,10 @@ class TraditionalPredictor:
         ground_truth = []
         histories = []
         
-        for i in range(min(n_samples, 50)):
+        for i in range(0, n_samples, pred_len + seq_len):
+            if len(predictions) >= 50:
+                break
+                
             history = data[i:i+seq_len]
             true_future = data[i+seq_len:i+seq_len+pred_len]
             
@@ -237,7 +255,14 @@ class TraditionalPredictor:
         window = int(self.model_params.get('window', min(20, seq_len // 4)))
         window = max(1, window) # 保证至少为1
         
-        for i in range(min(n_samples, 100)):
+        ma_type = self.model_params.get('ma_type', 'simple')
+        weights = np.arange(1, window + 1) if ma_type == 'weighted' else None
+        weight_sum = np.sum(weights) if weights is not None else None
+        
+        for i in range(0, n_samples, pred_len + seq_len):
+            if len(predictions) >= 100:
+                break
+                
             history = data[i:i+seq_len]
             true_future = data[i+seq_len:i+seq_len+pred_len]
             
@@ -247,14 +272,21 @@ class TraditionalPredictor:
             pred_sample = []
             
             for dim in range(n_dims):
-                ts = history[:, dim] if n_dims > 1 else history
-                
-                # 使用最后window个值的平均作为预测
-                ma_value = np.mean(ts[-window:])
-                
-                # 简单策略：使用移动平均值作为所有预测点
-                forecast = np.full(pred_len, ma_value)
-                pred_sample.append(forecast)
+                ts = history[:, dim] if n_dims > 1 else history.reshape(-1)
+
+                # 递推移动平均：每步预测都更新窗口
+                window_values = list(ts[-window:])
+                forecast = []
+                for _ in range(pred_len):
+                    if ma_type == 'weighted':
+                        ma_value = float(np.sum(np.array(window_values) * weights) / weight_sum)
+                    else:
+                        ma_value = float(np.mean(window_values))
+                    forecast.append(ma_value)
+                    window_values.append(ma_value)
+                    if len(window_values) > window:
+                        window_values.pop(0)
+                pred_sample.append(np.array(forecast))
             
             pred_sample = np.array(pred_sample).T
             predictions.append(pred_sample)

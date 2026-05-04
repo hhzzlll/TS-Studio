@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted, watch, nextTick } from 'vue'
 import { getCompletedModels, getPredictionResult, getTraditionalModels, predictWithTraditionalModel, getDatasets, getDatasetColumns } from '../api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -26,13 +26,13 @@ const seqLen = ref<number>(192)
 // 传统模型的高级参数
 const modelParams = ref<any>({
   // arima
-  p: 1, d: 1, q: 1,
+  p: 1, d: 1, q: 1, use_seasonal: false, P: 1, D: 1, Q: 1, s: 12,
   // prophet
   seasonality_mode: 'additive', yearly_seasonality: false, weekly_seasonality: 'auto', daily_seasonality: true,
   // exp smoothing
   trend: 'add', seasonal: 'none', seasonal_periods: 24,
   // moving average
-  window: 20
+  window: 20, ma_type: 'simple'
 })
 
 const loading = ref(false)
@@ -157,11 +157,14 @@ const handlePredict = () => {
 }
 
 const renderChart = async () => {
-    if (!resultData.value || !chartRef.value) return
+    if (!resultData.value) return
     
     await nextTick()
+    if (!chartRef.value) return
     
-    if (!myChart) {
+    // 只有当实例不存在，或者绑定的 DOM 节点变了（例如重新发起预测导致了组件重建），才重新初始化
+    if (!myChart || myChart.getDom() !== chartRef.value) {
+        if (myChart) myChart.dispose()
         myChart = echarts.init(chartRef.value)
     }
 
@@ -204,7 +207,7 @@ const renderChart = async () => {
     
     const option = {
         title: {
-            text: `样本 ${sampleIndex.value} - 目标维度预测`
+            text: `样本 ${sampleIndex.value + 1} - 目标维度预测`
         },
         tooltip: {
             trigger: 'axis'
@@ -415,8 +418,30 @@ watch(sampleIndex, () => {
                 <label class="text-xs">MA (q)</label>
                 <input v-model.number="modelParams.q" type="number" min="0" class="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm" />
               </div>
+            </div>            
+            <div class="space-y-2 mt-4 flex items-center gap-2">
+              <input v-model="modelParams.use_seasonal" type="checkbox" id="use_seasonal_arima" />
+              <label for="use_seasonal_arima" class="text-xs font-semibold">启用季节性选项 (SARIMA)</label>
             </div>
-          </div>
+
+            <div v-if="modelParams.use_seasonal" class="grid grid-cols-4 gap-4 mt-2 p-3 border rounded-md bg-muted/20">
+              <div class="space-y-2">
+                <label class="text-xs">P (季节AR)</label>
+                <input v-model.number="modelParams.P" type="number" min="0" class="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm" />
+              </div>
+              <div class="space-y-2">
+                <label class="text-xs">D (季节I)</label>
+                <input v-model.number="modelParams.D" type="number" min="0" class="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm" />
+              </div>
+              <div class="space-y-2">
+                <label class="text-xs">Q (季节MA)</label>
+                <input v-model.number="modelParams.Q" type="number" min="0" class="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm" />
+              </div>
+              <div class="space-y-2">
+                <label class="text-xs">s (周期长度)</label>
+                <input v-model.number="modelParams.s" type="number" min="2" class="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm" />
+              </div>
+            </div>          </div>
 
           <!-- Prophet 参数 -->
           <div v-else-if="selectedTraditionalModel === 'prophet'" class="space-y-4">
@@ -474,12 +499,19 @@ watch(sampleIndex, () => {
           <!-- Moving Average 参数 -->
           <div v-else-if="selectedTraditionalModel === 'moving_average'" class="space-y-4">
             <div class="text-xs text-muted-foreground mb-2">
-              提示: Time Window 指的是取过去多少步的数据来求平均值。均值算法通常生成平稳的一条水平直线。
+              提示: Time Window 指的是取过去多少步的数据来求平均。加权移动平均(Weighted)会赋予距离预测点更近的数据更大的权重。
             </div>
             <div class="grid grid-cols-3 gap-4">
               <div class="space-y-2">
                 <label class="text-xs">Time Window (窗口长度)</label>
                 <input v-model.number="modelParams.window" type="number" min="1" class="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm" />
+              </div>
+              <div class="space-y-2">
+                <label class="text-xs">MA Type (平均类型)</label>
+                <select v-model="modelParams.ma_type" class="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm">
+                  <option value="simple">Simple (简单平均)</option>
+                  <option value="weighted">Weighted (加权平均)</option>
+                </select>
               </div>
             </div>
           </div>
@@ -505,7 +537,7 @@ watch(sampleIndex, () => {
         <CardTitle class="flex justify-between items-center">
           <span>预测结果对比</span>
           <div class="flex items-center gap-4 text-sm font-normal">
-            <span>样本: {{ sampleIndex }} / {{ totalSamples - 1 }}</span>
+            <span>样本: {{ sampleIndex + 1 }} / {{ totalSamples }}</span>
             <input 
               type="range" 
               min="0" 
