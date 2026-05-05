@@ -32,6 +32,11 @@ const configForm = ref<ConfigForm>({
   learning_rate: 0.0006
 })
 
+// 打开外部代码仓库链接
+const openRepo = () => {
+        window.open('https://github.com/hhzzlll/TimeDTR', '_blank')
+}
+
 const datasetList = ref<string[]>([])
 const datasetColumns = ref<string[]>([])
 const datasetPreview = ref<any[]>([])
@@ -218,11 +223,16 @@ onUnmounted(() => {
         <h2 class="text-3xl font-bold tracking-tight">模型训练</h2>
         <p class="text-muted-foreground">配置并启动 Diffusion 时序预测模型的训练任务。</p>
       </div>
-      <div class="flex items-center gap-2">
-         <Button variant="outline">
-            <Icon icon="lucide:book-open" class="mr-2 h-4 w-4" /> 算法文档
-         </Button>
-      </div>
+        <div class="flex items-center gap-2">
+            <Button variant="outline" @click="openRepo">
+                <Icon icon="lucide:github" class="mr-2 h-4 w-4" /> 来源：TimeDTR
+            </Button>
+            <a href="/TimeDTR_paper.pdf" download>
+                <Button variant="outline">
+                    <Icon icon="lucide:download" class="mr-2 h-4 w-4" /> 下载论文
+                </Button>
+            </a>
+        </div>
     </div>
 
     <div class="flex flex-col gap-6 h-full overflow-y-auto pb-6 pr-2">
