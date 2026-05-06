@@ -431,6 +431,7 @@ const formatNum = (v: any) => {
                             @change="handleDatasetChange"
                             class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
+                            <option v-if="!datasetList || datasetList.length === 0" value="" disabled>无</option>
                             <option v-for="name in datasetList" :key="name" :value="name">{{ name }}</option>
                         </select>
                     </div>
@@ -441,6 +442,7 @@ const formatNum = (v: any) => {
                             v-model="selectedColumn" 
                             class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
+                            <option v-if="!columns || columns.length === 0" value="" disabled>无</option>
                             <option v-for="col in columns" :key="col" :value="col">{{ col }}</option>
                         </select>
                     </div>

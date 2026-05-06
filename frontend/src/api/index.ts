@@ -125,11 +125,53 @@ export const logoutUser = () => {
 export const setAuthStorage = (token: string, username: string) => {
     localStorage.setItem(AUTH_TOKEN_KEY, token)
     localStorage.setItem(AUTH_USERNAME_KEY, username)
+
+    // Manage multi-account sessions
+    const sessionsStr = localStorage.getItem('auth_sessions') || '[]'
+    try {
+        let sessions = JSON.parse(sessionsStr)
+        // Remove existing session for this user if exists (to update token)
+        sessions = sessions.filter((s: any) => s.username !== username)
+        sessions.push({ username, token })
+        localStorage.setItem('auth_sessions', JSON.stringify(sessions))
+    } catch (e) {
+        localStorage.setItem('auth_sessions', JSON.stringify([{ username, token }]))
+    }
 }
 
 export const clearAuthStorage = () => {
+    // Only clear active state, keep sessions
     localStorage.removeItem(AUTH_TOKEN_KEY)
     localStorage.removeItem(AUTH_USERNAME_KEY)
+}
+
+export const removeSession = (username: string) => {
+    const sessionsStr = localStorage.getItem('auth_sessions') || '[]'
+    try {
+        let sessions = JSON.parse(sessionsStr)
+        sessions = sessions.filter((s: any) => s.username !== username)
+        localStorage.setItem('auth_sessions', JSON.stringify(sessions))
+    } catch (e) { }
+}
+
+export const getSavedSessions = () => {
+    const sessionsStr = localStorage.getItem('auth_sessions') || '[]'
+    try {
+        return JSON.parse(sessionsStr)
+    } catch (e) {
+        return []
+    }
+}
+
+export const switchToSession = (username: string) => {
+    const sessions = getSavedSessions()
+    const target = sessions.find((s: any) => s.username === username)
+    if (target) {
+        localStorage.setItem(AUTH_TOKEN_KEY, target.token)
+        localStorage.setItem(AUTH_USERNAME_KEY, target.username)
+        return true
+    }
+    return false
 }
 
 export const getAuthState = () => {

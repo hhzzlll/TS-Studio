@@ -474,6 +474,7 @@ watch(compareWithTraditional, () => {
               v-model="selectedDeepModelId" 
               class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
+              <option v-if="!deepModels || deepModels.length === 0" value="" disabled>无</option>
               <option v-for="m in deepModels" :key="m.id" :value="m.id">
                 【{{ m.config.filename || m.config.dataset_name }}】{{ m.name }} | 模式:{{ m.config.features }} | 长度:{{ m.config.seq_len }}/{{ m.config.pred_len }} (ID: {{ m.id }})
               </option>
@@ -500,6 +501,7 @@ watch(compareWithTraditional, () => {
               v-model="selectedColumn" 
               class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
+              <option v-if="!datasetColumns || datasetColumns.length === 0" value="" disabled>无</option>
               <option v-for="col in datasetColumns" :key="col" :value="col">
                 {{ col }}
               </option>

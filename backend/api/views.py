@@ -8,6 +8,26 @@ import numpy as np
 import torch
 import traceback
 from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+
+
+def get_user_data_dir(user):
+    import shutil
+    base_data = os.path.join(settings.BASE_DIR, 'data')
+    if not user or not user.is_authenticated:
+        return base_data
+        
+    data_dir = os.path.join(base_data, str(user.id))
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir, exist_ok=True)
+        # copy default csv files to user dir when created so they have them
+        for f in ['ETTh1.csv', 'ETTh2.csv', 'Exchange.csv']:
+            src = os.path.join(base_data, f)
+            dst = os.path.join(data_dir, f)
+            if os.path.exists(src):
+                shutil.copy(src, dst)
+    return data_dir
+
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -67,6 +87,7 @@ class ConfigView(APIView):
         return Response({'status': 'Config received (not saved to file to avoid corruption)'})
 
 class FileUploadView(APIView):
+    permission_classes = [IsAuthenticated]
     def post(self, request):
         file_obj = request.FILES.get('file')
         if not file_obj:
@@ -101,7 +122,7 @@ class FileUploadView(APIView):
                 return Response({'status': 'error', 'error': f"Failed to preview: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Save to 'data' directory in backend root
-        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        data_dir = get_user_data_dir(request.user)
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)
 
@@ -129,10 +150,11 @@ class FileUploadView(APIView):
             return Response({'status': 'saved but could not read', 'error': str(e)})
 
 class DatasetListView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         # Ensure BASE_DIR is a string
         base_dir = str(settings.BASE_DIR)
-        data_dir = os.path.join(base_dir, 'data')
+        data_dir = get_user_data_dir(request.user)
         
         print(f"DatasetListView: Searching in {data_dir}")
         
@@ -151,9 +173,10 @@ class DatasetListView(APIView):
         return Response(files)
 
 class DatasetColumnsView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request, filename):
         base_dir = str(settings.BASE_DIR)
-        data_dir = os.path.join(base_dir, 'data')
+        data_dir = get_user_data_dir(request.user)
         file_path = os.path.join(data_dir, filename)
         
         if not os.path.exists(file_path):
@@ -177,7 +200,7 @@ class DatasetColumnsView(APIView):
         if not filename:
             return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
             
-        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        data_dir = get_user_data_dir(request.user)
         file_path = os.path.join(data_dir, filename)
         
         if not os.path.exists(file_path):
@@ -191,12 +214,13 @@ class DatasetColumnsView(APIView):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class DatasetDownloadView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         filename = request.query_params.get('filename')
         if not filename:
              return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
              
-        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        data_dir = get_user_data_dir(request.user)
         file_path = os.path.join(data_dir, filename)
         
         if not os.path.exists(file_path):
@@ -263,12 +287,13 @@ class LogoutView(APIView):
         return Response({'status': 'logged_out'})
 
 class DatasetInfoView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         filename = request.query_params.get('filename')
         if not filename:
              return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
              
-        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        data_dir = get_user_data_dir(request.user)
         file_path = os.path.join(data_dir, filename)
         
         if not os.path.exists(file_path):
@@ -290,12 +315,13 @@ class DatasetInfoView(APIView):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class StatisticalAnalysisView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         filename = request.query_params.get('filename')
         if not filename:
              return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
              
-        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        data_dir = get_user_data_dir(request.user)
         file_path = os.path.join(data_dir, filename)
         
         if not os.path.exists(file_path):
@@ -343,6 +369,7 @@ class StatisticalAnalysisView(APIView):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ColumnAnalysisView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         filename = request.query_params.get('filename')
         column = request.query_params.get('column')
@@ -350,7 +377,7 @@ class ColumnAnalysisView(APIView):
         if not filename or not column:
              return Response({'error': 'Filename and column required'}, status=status.HTTP_400_BAD_REQUEST)
              
-        data_dir = os.path.join(settings.BASE_DIR, 'data')
+        data_dir = get_user_data_dir(request.user)
         file_path = os.path.join(data_dir, filename)
         
         if not os.path.exists(file_path):
@@ -641,7 +668,7 @@ def run_training_task(training_job_id, config_data):
         args.use_amp = False  # Automatic Mixed Precision
         
         # Path configuration
-        args.root_path = os.path.join(settings.BASE_DIR, 'data') # Point to uploaded files directory
+        args.root_path = get_user_data_dir(job.user) # Point to uploaded files directory
         args.data_path = config_data.get('filename', 'Exchange.csv') # Default file
         args.data = config_data.get('dataset_type', 'custom') # Default type
 
@@ -840,6 +867,7 @@ def run_training_task(training_job_id, config_data):
         job.save(update_fields=['status', 'log'])
 
 class TrainingView(APIView):
+    permission_classes = [IsAuthenticated]
     def post(self, request):
         config_data = request.data
         
@@ -858,9 +886,11 @@ class TrainingView(APIView):
         return Response(serializer.data)
 
 class ActiveTrainingView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         # Find all active jobs
         active_jobs = TrainingModel.objects.filter(
+            user=request.user if request.user.is_authenticated else None,
             status__in=['pending', 'running', 'paused']
         ).order_by('-created_at')
         
@@ -868,29 +898,33 @@ class ActiveTrainingView(APIView):
         return Response(serializer.data)
 
 class CompletedModelsView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
-        jobs = TrainingModel.objects.filter(status='completed').order_by('-created_at')
+        jobs = TrainingModel.objects.filter(user=request.user if request.user.is_authenticated else None, status='completed').order_by('-created_at')
         serializer = TrainingModelSerializer(jobs, many=True)
         return Response(serializer.data)
 
 class TrainingStatusView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request, pk):
         try:
-            job = TrainingModel.objects.get(pk=pk)
+            job = TrainingModel.objects.get(pk=pk, user=request.user)
             serializer = TrainingModelSerializer(job)
             return Response(serializer.data)
         except TrainingModel.DoesNotExist:
             return Response({'error': 'Not found'}, status=404)
 
 class PredictView(APIView):
+    permission_classes = [IsAuthenticated]
     def post(self, request):
         # This could be used for running inference on NEW data
         return Response({'status': 'Not implemented yet'})
 
 class PredictionResultView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request, pk):
         try:
-            job = TrainingModel.objects.get(pk=pk)
+            job = TrainingModel.objects.get(pk=pk, user=request.user)
             config = job.config
             
             # Reconstruct setting string to find folder
@@ -984,6 +1018,7 @@ class PredictionResultView(APIView):
 
 
 class TraditionalModelListView(APIView):
+    permission_classes = [IsAuthenticated]
     """获取可用的传统模型列表"""
     def get(self, request):
         models = [
@@ -1012,6 +1047,7 @@ class TraditionalModelListView(APIView):
 
 
 class TraditionalModelPredictView(APIView):
+    permission_classes = [IsAuthenticated]
     """使用传统模型进行预测"""
     def post(self, request):
         from .traditional_models import load_and_predict, load_and_predict_aligned

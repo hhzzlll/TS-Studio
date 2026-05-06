@@ -260,6 +260,7 @@ onUnmounted(() => {
                        @change="handleDatasetChange"
                        class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
+                        <option v-if="!datasetList || datasetList.length === 0" value="" disabled>无</option>
                         <option v-for="name in datasetList" :key="name" :value="name">{{ name }}</option>
                     </select>
                   </div>
@@ -331,6 +332,7 @@ onUnmounted(() => {
                       <div class="space-y-2" v-if="configForm.features !== 'M'">
                          <label class="text-xs font-medium text-blue-600">Target Column</label>
                          <select v-model="configForm.target" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm">
+                             <option v-if="!datasetColumns || datasetColumns.length === 0" value="" disabled>无</option>
                              <option v-for="col in datasetColumns" :key="col" :value="col">{{ col }}</option>
                          </select>
                       </div>

@@ -1,12 +1,14 @@
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from .models import TrainingModel
 
 class TrainingControlView(APIView):
+    permission_classes = [IsAuthenticated]
     def post(self, request, pk):
         try:
-            job = TrainingModel.objects.get(pk=pk)
+            job = TrainingModel.objects.get(pk=pk, user=request.user)
             action = request.data.get('action') # 'pause', 'resume', 'stop'
             
             if action == 'pause':
