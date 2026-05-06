@@ -1,7 +1,7 @@
 {
     "FEA_config": {
-        "in_channels": 8,
-        "out_channels": 8,
+        "in_channels": 7,
+        "out_channels": 7,
         "num_res_layers": 18,
         "res_channels": 32,
         "skip_channels": 32,
@@ -13,7 +13,7 @@
         "s4_dropout": 0.2,
         "s4_bidirectional": 1,
         "s4_layernorm": 1,
-        "y_len": 206,
-        "pred_len": 14
+        "y_len": 360,
+        "pred_len": 168
     }
 }

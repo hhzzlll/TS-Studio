@@ -2,6 +2,7 @@ import os
 import json
 import threading
 import time
+import contextlib
 import pandas as pd
 import numpy as np
 import torch
@@ -9,10 +10,14 @@ import traceback
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.authtoken.models import Token
 from django.conf import settings
 from django.http import FileResponse
+from django.contrib.auth import authenticate, get_user_model
 from .models import TrainingModel
-from .serializers import TrainingModelSerializer
+from .serializers import TrainingModelSerializer, RegisterSerializer, LoginSerializer
 import sys
 import pathlib
 import statsmodels.api as sm
@@ -198,6 +203,64 @@ class DatasetDownloadView(APIView):
              return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
              
         return FileResponse(open(file_path, 'rb'), as_attachment=True, filename=filename)
+
+class RegisterView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = RegisterSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        User = get_user_model()
+        user = User.objects.create_user(
+            username=serializer.validated_data['username'],
+            password=serializer.validated_data['password'],
+            email=serializer.validated_data.get('email', '')
+        )
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({
+            'token': token.key,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email
+            }
+        }, status=status.HTTP_201_CREATED)
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        user = authenticate(
+            request,
+            username=serializer.validated_data['username'],
+            password=serializer.validated_data['password']
+        )
+        if not user:
+            return Response({'error': 'Invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
+
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({
+            'token': token.key,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email
+            }
+        })
+
+class LogoutView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        Token.objects.filter(user=request.user).delete()
+        return Response({'status': 'logged_out'})
 
 class DatasetInfoView(APIView):
     def get(self, request):
@@ -478,6 +541,35 @@ def run_training_task(training_job_id, config_data):
         job.status = 'running'
         job.save()
 
+        log_cache = job.log or ''
+
+        def append_job_log(message, max_chars=8000):
+            nonlocal log_cache
+            if not message:
+                return
+            log_cache = f"{log_cache}{message}"
+            if len(log_cache) > max_chars:
+                log_cache = log_cache[-max_chars:]
+            job.log = log_cache
+
+        class JobLogStream:
+            def __init__(self, append_fn, flush_size=512):
+                self.append_fn = append_fn
+                self.buffer = ''
+                self.flush_size = flush_size
+
+            def write(self, data):
+                if not data:
+                    return
+                self.buffer += data
+                if '\n' in self.buffer or len(self.buffer) >= self.flush_size:
+                    self.flush()
+
+            def flush(self):
+                if self.buffer:
+                    self.append_fn(self.buffer)
+                    self.buffer = ''
+
         # Construct Args object from config_data
         args = Args()
         # Defaults matching main_ddpm.py
@@ -615,6 +707,8 @@ def run_training_task(training_job_id, config_data):
             try:
                 # Refresh job to check for status changes (pause/cancel)
                 job.refresh_from_db()
+                # Restore log from cache after refresh to avoid losing output
+                job.log = log_cache
 
                 # Handle Pause
                 while job.status == 'paused':
@@ -637,20 +731,22 @@ def run_training_task(training_job_id, config_data):
                     'last_update': time.time()
                 })
                 
-                # If we have logs, we can optionally save them
-                # Be careful with JSON serialization of numpy types
+                # Write logs into job.log for frontend display
+                message = ''
                 if logs:
-                    # quick fix for json serialization if needed, currently Exp_Main stores lists of floats
-                    pass
+                    if isinstance(logs, (list, tuple)):
+                        message = "\n".join([str(item) for item in logs])
+                    else:
+                        message = str(logs)
+                if not message:
+                    message = f"{stage} | Epoch {current_epoch}/{total_epochs}\n"
+                else:
+                    message = f"{stage} | Epoch {current_epoch}/{total_epochs}\n{message}\n"
+
+                append_job_log(message)
 
                 job.metrics = metrics
-                # Don't save 'status' here effectively, just 'metrics' (and implicitly other fields)
-                # But we must avoid overwriting 'paused' status if it changed in between refresh and save?
-                # Actually job.save() saves all fields.
-                # If user sets 'paused' *while* we are processing this line, we might overwrite it with 'running'?
-                # No, because we checked job.status != paused.
-                # But parallel modification is a risk. `job.save(update_fields=['metrics'])` is safer.
-                job.save(update_fields=['metrics'])
+                job.save(update_fields=['metrics', 'log'])
                 
                 print(f"Training Progress: {stage} - Epoch {current_epoch}/{total_epochs}")
 
@@ -662,59 +758,61 @@ def run_training_task(training_job_id, config_data):
 
         mae_, mse_, rmse_, mape_, mspe_, corr_ = [], [], [], [], [], []
 
-        for ii in range(args.itr):
-            setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dt{}_{}'.format(
-                args.model_id,
-                args.model,
-                args.data,
-                args.features,
-                args.seq_len,
-                args.label_len,
-                args.pred_len, 
-                ii,
-                args.stage_mode)
+        log_stream = JobLogStream(append_job_log)
+        with contextlib.redirect_stdout(log_stream), contextlib.redirect_stderr(log_stream):
+            for ii in range(args.itr):
+                setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dt{}_{}'.format(
+                    args.model_id,
+                    args.model,
+                    args.data,
+                    args.features,
+                    args.seq_len,
+                    args.label_len,
+                    args.pred_len, 
+                    ii,
+                    args.stage_mode)
 
-            if args.tag != '':
-                setting += '_' + str(args.tag)
+                if args.tag != '':
+                    setting += '_' + str(args.tag)
 
-            if args.ablation_study_case != "none":
-                setting += '_' + str(args.tag)
+                if args.ablation_study_case != "none":
+                    setting += '_' + str(args.tag)
 
-            # Pass callback to Exp_Main
-            exp = Exp_Main(args, callback=training_callback)
+                # Pass callback to Exp_Main
+                exp = Exp_Main(args, callback=training_callback)
 
-            print(f"Starting training for job {job.id}, iteration {ii+1}/{args.itr}...")
-            print('>>>>>>>start pretraining : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
-            
-            # Pretraining
-            if args.stage_mode == 'TWO':
-                if args.model in ["MATS", "MATS2"]:
-                    # exp.mats_pretrain(setting)
-                    pass
+                print(f"Starting training for job {job.id}, iteration {ii+1}/{args.itr}...")
+                print('>>>>>>>start pretraining : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
+                
+                # Pretraining
+                if args.stage_mode == 'TWO':
+                    if args.model in ["MATS", "MATS2"]:
+                        # exp.mats_pretrain(setting)
+                        pass
+                    else:
+                        exp.pretrain(setting)
+
+                # Training
+                print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
+                if args.model == "D3VAE":
+                    if hasattr(exp, 'D3VAE_train'):
+                        exp.D3VAE_train(setting)
+                    else:
+                         exp.train(setting)
                 else:
-                    exp.pretrain(setting)
+                    exp.train(setting)
 
-            # Training
-            print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
-            if args.model == "D3VAE":
-                if hasattr(exp, 'D3VAE_train'):
-                    exp.D3VAE_train(setting)
-                else:
-                     exp.train(setting)
-            else:
-                exp.train(setting)
+                # Testing
+                print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+                mae, mse, rmse, mape, mspe, corr = exp.test(setting, mode="test")
+                mae_.append(mae)
+                mse_.append(mse)
+                rmse_.append(rmse)
+                mape_.append(mape)
+                mspe_.append(mspe)
+                corr_.append(corr)
 
-            # Testing
-            print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-            mae, mse, rmse, mape, mspe, corr = exp.test(setting, mode="test")
-            mae_.append(mae)
-            mse_.append(mse)
-            rmse_.append(rmse)
-            mape_.append(mape)
-            mspe_.append(mspe)
-            corr_.append(corr)
-
-            torch.cuda.empty_cache()
+                torch.cuda.empty_cache()
 
         # Final logging
         print('Final mean normed: ')
@@ -725,15 +823,21 @@ def run_training_task(training_job_id, config_data):
         print('> mspe:{:.4f}, std:{:.4f}'.format(np.mean(mspe_), np.std(mspe_)))
         print('> corr:{:.4f}, std:{:.4f}'.format(np.mean(corr_), np.std(corr_)))
         
+        log_stream.flush()
         job.status = 'completed'
-        job.save()
+        job.log = log_cache
+        job.save(update_fields=['status', 'log'])
         
     except Exception as e:
         traceback.print_exc()
         job = TrainingModel.objects.get(id=training_job_id)
+        try:
+            append_job_log(f"\n[ERROR] {e}\n")
+        except Exception:
+            pass
         job.status = 'failed'
-        job.log = str(e)
-        job.save()
+        job.log = log_cache or str(e)
+        job.save(update_fields=['status', 'log'])
 
 class TrainingView(APIView):
     def post(self, request):

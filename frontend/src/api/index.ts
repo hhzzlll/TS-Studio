@@ -1,5 +1,8 @@
 import axios from 'axios'
 
+const AUTH_TOKEN_KEY = 'auth_token'
+const AUTH_USERNAME_KEY = 'auth_username'
+
 const api = axios.create({
     baseURL: '/api',
     timeout: 50000
@@ -8,6 +11,11 @@ const api = axios.create({
 // Request interceptor
 api.interceptors.request.use(
     config => {
+        const token = localStorage.getItem(AUTH_TOKEN_KEY)
+        if (token) {
+            config.headers = config.headers || {}
+            config.headers.Authorization = `Token ${token}`
+        }
         return config
     },
     error => {
@@ -100,4 +108,33 @@ export const getTraditionalModels = () => {
 
 export const predictWithTraditionalModel = (params: any) => {
     return api.post('/traditional-models/predict/', params)
+}
+
+export const registerUser = (payload: { username: string; password: string; email?: string }) => {
+    return api.post('/auth/register/', payload)
+}
+
+export const loginUser = (payload: { username: string; password: string }) => {
+    return api.post('/auth/login/', payload)
+}
+
+export const logoutUser = () => {
+    return api.post('/auth/logout/')
+}
+
+export const setAuthStorage = (token: string, username: string) => {
+    localStorage.setItem(AUTH_TOKEN_KEY, token)
+    localStorage.setItem(AUTH_USERNAME_KEY, username)
+}
+
+export const clearAuthStorage = () => {
+    localStorage.removeItem(AUTH_TOKEN_KEY)
+    localStorage.removeItem(AUTH_USERNAME_KEY)
+}
+
+export const getAuthState = () => {
+    return {
+        token: localStorage.getItem(AUTH_TOKEN_KEY),
+        username: localStorage.getItem(AUTH_USERNAME_KEY)
+    }
 }

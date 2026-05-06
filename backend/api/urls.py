@@ -4,11 +4,14 @@ from .views import (
     PredictView, PredictionResultView, ActiveTrainingView, DatasetListView, 
     DatasetInfoView, CompletedModelsView, StatisticalAnalysisView, 
     ColumnAnalysisView, DatasetDownloadView, TraditionalModelListView, 
-    TraditionalModelPredictView, DatasetColumnsView
+    TraditionalModelPredictView, DatasetColumnsView, RegisterView, LoginView, LogoutView
 )
 from .extra_views import TrainingControlView
 
 urlpatterns = [
+    path('auth/register/', RegisterView.as_view(), name='auth-register'),
+    path('auth/login/', LoginView.as_view(), name='auth-login'),
+    path('auth/logout/', LogoutView.as_view(), name='auth-logout'),
     path('upload/', FileUploadView.as_view(), name='file-upload'),
     path('datasets/', DatasetListView.as_view(), name='dataset-list'),
     path('datasets/<str:filename>/columns/', DatasetColumnsView.as_view(), name='dataset-columns'),
