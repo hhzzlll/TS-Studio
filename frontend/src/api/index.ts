@@ -122,6 +122,18 @@ export const logoutUser = () => {
     return api.post('/auth/logout/')
 }
 
+export const deleteAccount = () => {
+    return api.post('/auth/delete/')
+}
+
+export const requestPasswordReset = (payload: { username: string }) => {
+    return api.post('/auth/password-reset/', payload)
+}
+
+export const confirmPasswordReset = (payload: { username: string; code: string; password: string; confirm_password: string }) => {
+    return api.post('/auth/password-reset/confirm/', payload)
+}
+
 export const setAuthStorage = (token: string, username: string) => {
     localStorage.setItem(AUTH_TOKEN_KEY, token)
     localStorage.setItem(AUTH_USERNAME_KEY, username)

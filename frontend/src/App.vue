@@ -3,12 +3,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { Button } from './components/ui/button'
-import { clearAuthStorage, getAuthState, logoutUser, getSavedSessions, switchToSession, removeSession } from './api'
+import { clearAuthStorage, getAuthState, logoutUser, getSavedSessions, switchToSession, removeSession, deleteAccount } from './api'
 
 const route = useRoute()
 const router = useRouter()
 const activePath = computed(() => route.path)
-const isAuthRoute = computed(() => route.name === 'Auth')
+const isMinimalRoute = computed(() => route.name === 'Auth' || route.name === 'ForgotPassword')
 const isAuthed = ref(false)
 const authUsername = ref('')
 const savedSessions = ref<any[]>([])
@@ -44,8 +44,18 @@ const handleSwitchAccount = (targetUsername: string) => {
 }
 
 const handleLogout = async (completelyRemove: boolean = false) => {
+  if (completelyRemove) {
+    const confirmed = window.confirm('确定要注销账号吗？此操作不可恢复。')
+    if (!confirmed) {
+      return
+    }
+  }
   try {
-    await logoutUser()
+    if (completelyRemove) {
+      await deleteAccount()
+    } else {
+      await logoutUser()
+    }
   } catch (e) {
     // Ignore API errors and clear local auth state anyway
   } finally {
@@ -70,7 +80,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="isAuthRoute" class="min-h-screen bg-background">
+  <div v-if="isMinimalRoute" class="min-h-screen bg-background">
     <router-view />
   </div>
   <div v-else class="min-h-screen bg-background flex">

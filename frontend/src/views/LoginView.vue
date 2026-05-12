@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { loginUser, setAuthStorage } from '../api'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 
 const router = useRouter()
@@ -41,7 +41,6 @@ const handleLogin = async () => {
     <Card class="w-full max-w-md">
       <CardHeader>
         <CardTitle>用户登录</CardTitle>
-        <CardDescription>请输入账号和密码以继续</CardDescription>
       </CardHeader>
       <CardContent>
         <div class="space-y-4">
@@ -57,6 +56,9 @@ const handleLogin = async () => {
           <Button class="w-full" :disabled="loading" @click="handleLogin">
             {{ loading ? '登录中...' : '登录' }}
           </Button>
+          <div class="text-sm text-muted-foreground">
+            <router-link to="/forgot-password" class="text-primary hover:underline">忘记密码？</router-link>
+          </div>
           <div class="text-sm text-muted-foreground">
             没有账号？
             <router-link to="/register" class="text-primary hover:underline">去注册</router-link>

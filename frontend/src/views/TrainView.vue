@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onUnmounted, onMounted } from 'vue'
+import { ref, onUnmounted, onMounted, watch } from 'vue'
 import { startTraining, getTrainingStatus, controlTraining, getActiveTraining, getDatasets, getDatasetInfo } from '../api' 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ interface ConfigForm {
   target: string;
   seq_len: number;
   label_len: number;
+    use_label_len_auto: boolean;
   pred_len: number;
   features: string;
   batch_size: number;
@@ -25,6 +26,7 @@ const configForm = ref<ConfigForm>({
   target: 'OT',
   seq_len: 192,
   label_len: 7,
+    use_label_len_auto: true,
   pred_len: 14,
   features: 'M',
   batch_size: 64,
@@ -42,7 +44,6 @@ const datasetColumns = ref<string[]>([])
 const datasetPreview = ref<any[]>([])
 const isTraining = ref(false)
 const trainingJobs = ref<any[]>([])
-const activeTab = ref('monitor') // monitor, history
 let pollInterval: any = null
 
 const getStatusText = (job: any) => {
@@ -120,7 +121,6 @@ const handleTrain = async () => {
 
         const res: any = await startTraining(payload)
         trainingJobs.value.unshift(res)
-        activeTab.value = 'monitor'
         startPolling()
     } catch (e) {
         console.error(e)
@@ -172,46 +172,79 @@ const startPolling = () => {
     pollInterval = setInterval(poll, 2000)
 }
 
-onMounted(async () => {
+const loadDatasets = async () => {
     try {
         console.log("Fetching datasets...")
-        // Load datasets
         const files: any = await getDatasets()
         console.log("Datasets fetched:", files)
-        
+
         if (Array.isArray(files)) {
             datasetList.value = files
         } else {
             console.error("Expected array of datasets, got:", files)
             datasetList.value = []
         }
-        
-        // Pre-select if local storage has one, or default to first
+
         const lastFile = localStorage.getItem('dataset_filename')
         if (lastFile && datasetList.value.includes(lastFile)) {
             configForm.value.dataset_name = lastFile
         } else if (datasetList.value.length > 0) {
             configForm.value.dataset_name = datasetList.value[0]
-        }
-        
-        if (configForm.value.dataset_name) {
-            handleDatasetChange()
+        } else {
+            configForm.value.dataset_name = ''
         }
 
+        datasetColumns.value = []
+        datasetPreview.value = []
+
+        if (configForm.value.dataset_name) {
+            await handleDatasetChange()
+        }
+    } catch (e) {
+        console.error("Error loading datasets:", e)
+    }
+}
+
+const loadActiveJobs = async () => {
+    try {
         const activeJobs: any = await getActiveTraining()
         if (Array.isArray(activeJobs) && activeJobs.length > 0) {
             console.log("Found active jobs:", activeJobs.length)
             trainingJobs.value = activeJobs
             startPolling()
+        } else {
+            trainingJobs.value = []
         }
-        
     } catch (e) {
-        console.error("Error in onMounted:", e)
+        console.error("Error loading active jobs:", e)
     }
+}
+
+const handleAuthChanged = async () => {
+    if (pollInterval) clearInterval(pollInterval)
+    trainingJobs.value = []
+    await loadDatasets()
+    await loadActiveJobs()
+}
+
+onMounted(async () => {
+    await loadDatasets()
+    await loadActiveJobs()
+    window.addEventListener('auth-changed', handleAuthChanged)
 })
+
+watch(
+    () => [configForm.value.pred_len, configForm.value.use_label_len_auto],
+    ([predLen, useAuto]) => {
+        if (useAuto) {
+            configForm.value.label_len = Math.floor(Number(predLen) / 2)
+        }
+    }
+)
 
 onUnmounted(() => {
     if (pollInterval) clearInterval(pollInterval)
+    window.removeEventListener('auth-changed', handleAuthChanged)
 })
 </script>
 
@@ -317,7 +350,11 @@ onUnmounted(() => {
                       <div class="grid grid-cols-2 gap-4">
                           <div class="space-y-2">
                               <label class="text-xs font-medium text-muted-foreground">Label Len</label>
-                              <input type="number" v-model.number="configForm.label_len" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" />
+                                                            <input type="number" v-model.number="configForm.label_len" :disabled="configForm.use_label_len_auto" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm disabled:opacity-60" />
+                                                            <label class="flex items-center gap-2 text-xs text-muted-foreground">
+                                                                <input type="checkbox" v-model="configForm.use_label_len_auto" class="h-3 w-3" />
+                                                                默认 Pred Length 的一半
+                                                            </label>
                           </div>
                           <div class="space-y-2">
                               <label class="text-xs font-medium text-muted-foreground">Features</label>
@@ -368,27 +405,9 @@ onUnmounted(() => {
 
       </div>
       
-      <!-- Bottom Panel: Monitoring & History -->
+      <!-- Bottom Panel: Monitoring -->
       <div class="flex flex-col gap-6">
-        
-        <!-- Tabs -->
-        <div class="flex items-center space-x-1 border-b">
-            <button 
-                @click="activeTab = 'monitor'" 
-                :class="['px-4 py-2 text-sm font-medium border-b-2 transition-colors', activeTab === 'monitor' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground']"
-            >
-                实时监控
-            </button>
-            <button 
-                @click="activeTab = 'history'" 
-                :class="['px-4 py-2 text-sm font-medium border-b-2 transition-colors', activeTab === 'history' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground']"
-            >
-                历史任务
-            </button>
-        </div>
-
-        <!-- Monitor View -->
-        <div v-show="activeTab === 'monitor'" class="space-y-6">
+        <div class="space-y-6">
             <template v-if="trainingJobs.length > 0">
                 <!-- Active Job Status Card -->
                 <Card class="border-l-4 border-l-primary shadow-sm bg-gradient-to-r from-background to-muted/20">
@@ -475,30 +494,6 @@ onUnmounted(() => {
                 <p class="text-sm">请在左侧配置并启动一个新的实验</p>
             </div>
         </div>
-
-        <!-- History View -->
-        <div v-show="activeTab === 'history'" class="space-y-4">
-             <div v-if="trainingJobs.length === 0" class="text-center py-10 text-muted-foreground">无需历史记录</div>
-             <Card v-for="job in trainingJobs.slice(1)" :key="job.id" class="hover:bg-muted/30 transition-colors">
-                <CardContent class="p-4 flex items-center justify-between">
-                    <div>
-                        <div class="font-medium">{{ job.name }}</div>
-                        <div class="text-xs text-muted-foreground flex gap-3 mt-1">
-                            <span class="font-mono">{{ job.id.substring(0,8) }}...</span>
-                            <span>{{ new Date(job.created_at).toLocaleString() }}</span>
-                            <span class="font-mono border px-1 rounded">{{ job.config.dataset_name }}</span>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-4">
-                        <span :class="getStatusColor(job)" class="px-2 py-0.5 rounded text-xs font-bold">{{ getStatusText(job) }}</span>
-                        <Button variant="ghost" size="icon">
-                             <Icon icon="lucide:chevron-right" class="h-4 w-4" />
-                        </Button>
-                    </div>
-                </CardContent>
-             </Card>
-        </div>
-
       </div>
     </div>
   </div>

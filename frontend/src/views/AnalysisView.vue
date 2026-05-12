@@ -31,24 +31,43 @@ let fftChart: echarts.ECharts | null = null
 
 onMounted(async () => {
     window.addEventListener('resize', handleResize)
-    try {
-        const files: any = await getDatasets()
-        datasetList.value = files
-        if (files.length > 0) {
-            selectedDataset.value = files[0]
-            handleDatasetChange()
-        }
-    } catch (e) {
-        console.error(e)
-    }
+    await loadDatasets()
+    window.addEventListener('auth-changed', handleAuthChanged)
 })
 
 onUnmounted(() => {
     window.removeEventListener('resize', handleResize)
+    window.removeEventListener('auth-changed', handleAuthChanged)
     myChart?.dispose()
     diffChart?.dispose()
     fftChart?.dispose()
 })
+
+const loadDatasets = async () => {
+    try {
+        const files: any = await getDatasets()
+        datasetList.value = Array.isArray(files) ? files : []
+
+        if (datasetList.value.length > 0) {
+            selectedDataset.value = datasetList.value[0]
+            await handleDatasetChange()
+        } else {
+            selectedDataset.value = ''
+            resetGeneralAnalysis()
+            resetColumnAnalysis()
+        }
+    } catch (e) {
+        console.error(e)
+    }
+}
+
+const handleAuthChanged = async () => {
+    datasetList.value = []
+    selectedDataset.value = ''
+    resetGeneralAnalysis()
+    resetColumnAnalysis()
+    await loadDatasets()
+}
 
 const handleResize = () => {
     myChart?.resize()

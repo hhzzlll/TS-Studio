@@ -456,6 +456,23 @@ watch(compareWithTraditional, () => {
   renderChart()
 })
 
+const getDisplayLabelLen = (model: any) => {
+  const predLen = Number(model?.config?.pred_len ?? 0)
+  const auto = model?.config?.use_label_len_auto === true
+  const labelLen = model?.config?.label_len
+
+  if (auto && predLen > 0) {
+    return Math.floor(predLen / 2)
+  }
+
+  if (labelLen === undefined || labelLen === null || labelLen === '') {
+    return predLen > 0 ? Math.floor(predLen / 2) : ''
+  }
+
+  const parsed = Number(labelLen)
+  return Number.isFinite(parsed) ? parsed : ''
+}
+
 </script>
 
 <template>
@@ -476,7 +493,7 @@ watch(compareWithTraditional, () => {
             >
               <option v-if="!deepModels || deepModels.length === 0" value="" disabled>无</option>
               <option v-for="m in deepModels" :key="m.id" :value="m.id">
-                【{{ m.config.filename || m.config.dataset_name }}】{{ m.name }} | 模式:{{ m.config.features }} | 长度:{{ m.config.seq_len }}/{{ m.config.pred_len }} (ID: {{ m.id }})
+                【{{ m.config.filename || m.config.dataset_name }}】{{ m.name }} | 模式:{{ m.config.features }} | 长度:{{ m.config.seq_len }}/{{ getDisplayLabelLen(m) }}/{{ m.config.pred_len }} (ID: {{ m.id }})
               </option>
             </select>
           </div>

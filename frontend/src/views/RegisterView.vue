@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { registerUser, setAuthStorage } from '../api'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 
 const router = useRouter()
@@ -10,13 +10,40 @@ const router = useRouter()
 const username = ref('')
 const email = ref('')
 const password = ref('')
+const confirmPassword = ref('')
 const errorMsg = ref('')
 const loading = ref(false)
+
+const validatePasswordStrength = (pwd: string): string | null => {
+  if (pwd.length < 8) return '密码长度不能少于8位'
+  if (!/[a-zA-Z]/.test(pwd)) return '密码必须包含至少一个字母'
+  if (!/[0-9]/.test(pwd)) return '密码必须包含至少一个数字'
+  return null
+}
 
 const handleRegister = async () => {
   errorMsg.value = ''
   if (!username.value || !password.value) {
     errorMsg.value = '请输入用户名和密码'
+    return
+  }
+
+  if (!email.value) {
+    errorMsg.value = '请输入邮箱'
+    return
+  }
+
+  if (!confirmPassword.value) {
+    errorMsg.value = '请再次输入密码'
+    return
+  }
+  if (password.value !== confirmPassword.value) {
+    errorMsg.value = '两次输入的密码不一致'
+    return
+  }
+  const strengthError = validatePasswordStrength(password.value)
+  if (strengthError) {
+    errorMsg.value = strengthError
     return
   }
 
@@ -44,7 +71,6 @@ const handleRegister = async () => {
     <Card class="w-full max-w-md">
       <CardHeader>
         <CardTitle>用户注册</CardTitle>
-        <CardDescription>创建新账号以使用系统功能</CardDescription>
       </CardHeader>
       <CardContent>
         <div class="space-y-4">
@@ -53,12 +79,16 @@ const handleRegister = async () => {
             <input v-model="username" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" placeholder="用户名" />
           </div>
           <div class="space-y-2">
-            <label class="text-sm font-medium">邮箱（可选）</label>
+            <label class="text-sm font-medium">邮箱</label>
             <input v-model="email" type="email" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" placeholder="邮箱" />
           </div>
           <div class="space-y-2">
             <label class="text-sm font-medium">密码</label>
-            <input v-model="password" type="password" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" placeholder="密码" />
+            <input v-model="password" type="password" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" placeholder="至少8位，包含字母和数字" />
+          </div>
+          <div class="space-y-2">
+            <label class="text-sm font-medium">确认密码</label>
+            <input v-model="confirmPassword" type="password" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" placeholder="请再次输入密码" />
           </div>
           <div v-if="errorMsg" class="text-sm text-red-500">{{ errorMsg }}</div>
           <Button class="w-full" :disabled="loading" @click="handleRegister">

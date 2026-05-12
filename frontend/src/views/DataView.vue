@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { uploadFile, getDatasets, deleteDataset, getDatasetDownloadUrl, getDatasetInfo } from '../api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -99,6 +99,15 @@ const fetchDatasets = async () => {
     }
 }
 
+const handleAuthChanged = async () => {
+  cancelUpload()
+  viewPreviewData.value = []
+  viewPreviewColumns.value = []
+  viewPreviewFilename.value = ''
+  datasets.value = []
+  await fetchDatasets()
+}
+
 const handleDelete = async (filename: string) => {
     if(!confirm(`确定要删除 ${filename} 吗?`)) return
     try {
@@ -136,6 +145,11 @@ const handlePreview = async (filename: string) => {
 
 onMounted(() => {
     fetchDatasets()
+  window.addEventListener('auth-changed', handleAuthChanged)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('auth-changed', handleAuthChanged)
 })
 </script>
 

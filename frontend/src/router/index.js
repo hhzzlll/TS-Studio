@@ -4,6 +4,7 @@ import TrainView from '../views/TrainView.vue'
 import PredictView from '../views/PredictView.vue'
 import AnalysisView from '../views/AnalysisView.vue'
 import AuthView from '../views/AuthView.vue'
+import ForgotPasswordView from '../views/ForgotPasswordView.vue'
 import { getAuthState } from '../api'
 
 const routes = [
@@ -35,6 +36,11 @@ const routes = [
         path: '/auth',
         name: 'Auth',
         component: AuthView
+    },
+    {
+        path: '/forgot-password',
+        name: 'ForgotPassword',
+        component: ForgotPasswordView
     },
     {
         path: '/login',

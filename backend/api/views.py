@@ -1,4 +1,5 @@
 import os
+import shutil
 import json
 import threading
 import time
@@ -7,6 +8,8 @@ import pandas as pd
 import numpy as np
 import torch
 import traceback
+import random
+from datetime import timedelta
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 
@@ -20,13 +23,18 @@ def get_user_data_dir(user):
     data_dir = os.path.join(base_data, str(user.id))
     if not os.path.exists(data_dir):
         os.makedirs(data_dir, exist_ok=True)
-        # copy default csv files to user dir when created so they have them
-        for f in ['ETTh1.csv', 'ETTh2.csv', 'Exchange.csv']:
-            src = os.path.join(base_data, f)
-            dst = os.path.join(data_dir, f)
-            if os.path.exists(src):
-                shutil.copy(src, dst)
     return data_dir
+
+def normalize_user_filename(filename):
+    if not filename:
+        return None
+    if filename in ('.', '..'):
+        return None
+    if filename != os.path.basename(filename):
+        return None
+    if os.path.altsep and os.path.altsep in filename:
+        return None
+    return filename
 
 from rest_framework.response import Response
 from rest_framework import status
@@ -36,7 +44,9 @@ from rest_framework.authtoken.models import Token
 from django.conf import settings
 from django.http import FileResponse
 from django.contrib.auth import authenticate, get_user_model
-from .models import TrainingModel
+from django.core.mail import send_mail
+from django.utils import timezone
+from .models import TrainingModel, PasswordResetCode
 from .serializers import TrainingModelSerializer, RegisterSerializer, LoginSerializer
 import sys
 import pathlib
@@ -126,7 +136,11 @@ class FileUploadView(APIView):
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)
 
-        save_path = os.path.join(data_dir, file_obj.name)
+        safe_name = normalize_user_filename(file_obj.name)
+        if not safe_name:
+            return Response({'error': '无效的文件名'}, status=status.HTTP_400_BAD_REQUEST)
+
+        save_path = os.path.join(data_dir, safe_name)
         with open(save_path, 'wb+') as destination:
             for chunk in file_obj.chunks():
                 destination.write(chunk)
@@ -141,7 +155,7 @@ class FileUploadView(APIView):
             columns = list(df.columns)
             return Response({
                 'status': 'success', 
-                'filename': file_obj.name, 
+                'filename': safe_name, 
                 'columns': columns, 
                 'preview': preview,
                 'mode': 'saved'
@@ -175,9 +189,13 @@ class DatasetListView(APIView):
 class DatasetColumnsView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request, filename):
+        safe_name = normalize_user_filename(filename)
+        if not safe_name:
+            return Response({'error': '无效的文件名'}, status=status.HTTP_400_BAD_REQUEST)
+
         base_dir = str(settings.BASE_DIR)
         data_dir = get_user_data_dir(request.user)
-        file_path = os.path.join(data_dir, filename)
+        file_path = os.path.join(data_dir, safe_name)
         
         if not os.path.exists(file_path):
             return Response({'error': 'File not found'}, status=404)
@@ -199,9 +217,13 @@ class DatasetColumnsView(APIView):
         filename = request.query_params.get('filename')
         if not filename:
             return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        safe_name = normalize_user_filename(filename)
+        if not safe_name:
+            return Response({'error': '无效的文件名'}, status=status.HTTP_400_BAD_REQUEST)
             
         data_dir = get_user_data_dir(request.user)
-        file_path = os.path.join(data_dir, filename)
+        file_path = os.path.join(data_dir, safe_name)
         
         if not os.path.exists(file_path):
              return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -219,9 +241,13 @@ class DatasetDownloadView(APIView):
         filename = request.query_params.get('filename')
         if not filename:
              return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        safe_name = normalize_user_filename(filename)
+        if not safe_name:
+            return Response({'error': '无效的文件名'}, status=status.HTTP_400_BAD_REQUEST)
              
         data_dir = get_user_data_dir(request.user)
-        file_path = os.path.join(data_dir, filename)
+        file_path = os.path.join(data_dir, safe_name)
         
         if not os.path.exists(file_path):
              return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -266,7 +292,7 @@ class LoginView(APIView):
             password=serializer.validated_data['password']
         )
         if not user:
-            return Response({'error': 'Invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': '账号或密码错误'}, status=status.HTTP_400_BAD_REQUEST)
 
         token, _ = Token.objects.get_or_create(user=user)
         return Response({
@@ -286,15 +312,132 @@ class LogoutView(APIView):
         Token.objects.filter(user=request.user).delete()
         return Response({'status': 'logged_out'})
 
+def generate_reset_code():
+    return f"{random.randint(0, 999999):06d}"
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        username = (request.data.get('username') or '').strip()
+        if not username:
+            return Response({'error': '请输入用户名'}, status=status.HTTP_400_BAD_REQUEST)
+
+        User = get_user_model()
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response({'status': 'sent'})
+
+        email = (user.email or '').strip()
+        if not email:
+            return Response({'error': '该账号未绑定邮箱'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not getattr(settings, 'EMAIL_CONFIGURED', False):
+            return Response({'error': '邮件服务未配置'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        code = generate_reset_code()
+        expires_at = timezone.now() + timedelta(minutes=10)
+
+        PasswordResetCode.objects.filter(user=user, used=False).update(used=True)
+        PasswordResetCode.objects.create(
+            user=user,
+            email=email,
+            code=code,
+            expires_at=expires_at
+        )
+
+        subject = 'TS Studio 密码重置验证码'
+        message = f"你的验证码是 {code}，10分钟内有效。如非本人操作请忽略。"
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [email], fail_silently=False)
+
+        return Response({'status': 'sent'})
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        username = (request.data.get('username') or '').strip()
+        code = (request.data.get('code') or '').strip()
+        password = request.data.get('password') or ''
+        confirm_password = request.data.get('confirm_password') or ''
+
+        if not username or not code or not password or not confirm_password:
+            return Response({'error': '请填写完整信息'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if password != confirm_password:
+            return Response({'error': '两次输入的密码不一致'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(password) < 8:
+            return Response({'error': '密码长度不能少于8位'}, status=status.HTTP_400_BAD_REQUEST)
+        if not any(c.isalpha() for c in password):
+            return Response({'error': '密码必须包含至少一个字母'}, status=status.HTTP_400_BAD_REQUEST)
+        if not any(c.isdigit() for c in password):
+            return Response({'error': '密码必须包含至少一个数字'}, status=status.HTTP_400_BAD_REQUEST)
+
+        User = get_user_model()
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response({'error': '用户名不存在'}, status=status.HTTP_400_BAD_REQUEST)
+
+        email = (user.email or '').strip()
+        if not email:
+            return Response({'error': '该账号未绑定邮箱'}, status=status.HTTP_400_BAD_REQUEST)
+
+        record = PasswordResetCode.objects.filter(
+            user=user,
+            email=email,
+            code=code,
+            used=False
+        ).order_by('-created_at').first()
+
+        if not record:
+            return Response({'error': '验证码无效'}, status=status.HTTP_400_BAD_REQUEST)
+        if record.is_expired():
+            return Response({'error': '验证码已过期'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(password)
+        user.save()
+
+        record.used = True
+        record.save(update_fields=['used'])
+
+        Token.objects.filter(user=user).delete()
+
+        return Response({'status': 'reset'})
+
+class DeleteAccountView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        user_id = user.id
+        username = user.username
+        data_dir = os.path.join(settings.BASE_DIR, 'data', str(user_id))
+
+        Token.objects.filter(user=user).delete()
+        user.delete()
+
+        if os.path.exists(data_dir):
+            shutil.rmtree(data_dir, ignore_errors=True)
+
+        return Response({'status': 'deleted', 'username': username})
+
 class DatasetInfoView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request):
         filename = request.query_params.get('filename')
         if not filename:
              return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        safe_name = normalize_user_filename(filename)
+        if not safe_name:
+            return Response({'error': '无效的文件名'}, status=status.HTTP_400_BAD_REQUEST)
              
         data_dir = get_user_data_dir(request.user)
-        file_path = os.path.join(data_dir, filename)
+        file_path = os.path.join(data_dir, safe_name)
         
         if not os.path.exists(file_path):
              return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -320,9 +463,13 @@ class StatisticalAnalysisView(APIView):
         filename = request.query_params.get('filename')
         if not filename:
              return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        safe_name = normalize_user_filename(filename)
+        if not safe_name:
+            return Response({'error': '无效的文件名'}, status=status.HTTP_400_BAD_REQUEST)
              
         data_dir = get_user_data_dir(request.user)
-        file_path = os.path.join(data_dir, filename)
+        file_path = os.path.join(data_dir, safe_name)
         
         if not os.path.exists(file_path):
              return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -376,9 +523,13 @@ class ColumnAnalysisView(APIView):
         
         if not filename or not column:
              return Response({'error': 'Filename and column required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        safe_name = normalize_user_filename(filename)
+        if not safe_name:
+            return Response({'error': '无效的文件名'}, status=status.HTTP_400_BAD_REQUEST)
              
         data_dir = get_user_data_dir(request.user)
-        file_path = os.path.join(data_dir, filename)
+        file_path = os.path.join(data_dir, safe_name)
         
         if not os.path.exists(file_path):
              return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -676,8 +827,10 @@ def run_training_task(training_job_id, config_data):
         for k, v in config_data.items():
             setattr(args, k, v)
         
-        # 1. Update label_len defaults to pred_len / 2
-        args.label_len = int(args.pred_len / 2)
+        # 1. Optionally default label_len to pred_len / 2
+        use_label_len_auto = config_data.get('use_label_len_auto', True)
+        if use_label_len_auto:
+            args.label_len = int(args.pred_len / 2)
 
         # 2. Update num_vars from dataset
         try:
@@ -873,6 +1026,7 @@ class TrainingView(APIView):
         
         # Create Job
         job = TrainingModel.objects.create(
+            user=request.user,
             name=config_data.get('model_name', 'Untitled Model'),
             config=config_data,
             status='pending'
@@ -936,12 +1090,15 @@ class PredictionResultView(APIView):
             data_type = config.get('dataset_type', 'custom')
             features = config.get('features', 'M')
             seq_len = config.get('seq_len', 192)
-            label_len = config.get('label_len', 7) # This might have been auto-calculated in run_training_task but stored in config? 
-            # Wait, config stored in DB is request.data. 
-            # In run_training_task: args.label_len = int(args.pred_len / 2)
-            # So we should recalculate here to match
             pred_len = config.get('pred_len', 14)
-            label_len = int(pred_len / 2) # Force recalculate to match logic
+            label_len = config.get('label_len', 7)
+            use_label_len_auto = config.get('use_label_len_auto')
+            if use_label_len_auto is True:
+                label_len = int(pred_len / 2)
+            elif label_len is None:
+                label_len = int(pred_len / 2)
+            else:
+                label_len = int(label_len)
             
             dataset_name = config.get('dataset_name', 'Exchange')
             # model_id logic
@@ -1073,12 +1230,21 @@ class TraditionalModelPredictView(APIView):
             model_params = request.data.get('model_params', {})
             
             # 确定数据集路径
+            data_dir = get_user_data_dir(request.user)
+
             if filename:
-                dataset_path = os.path.join(settings.BASE_DIR, 'data', filename)
+                safe_name = normalize_user_filename(filename)
+                if not safe_name:
+                    return Response({'error': '无效的文件名'}, status=status.HTTP_400_BAD_REQUEST)
+                dataset_path = os.path.join(data_dir, safe_name)
             elif dataset_name:
+                if dataset_name in ('.', '..'):
+                    return Response({'error': '无效的数据集名称'}, status=status.HTTP_400_BAD_REQUEST)
+                if os.path.sep in dataset_name or (os.path.altsep and os.path.altsep in dataset_name):
+                    return Response({'error': '无效的数据集名称'}, status=status.HTTP_400_BAD_REQUEST)
                 # 尝试常见文件格式
                 for ext in ['.csv', '.xlsx']:
-                    path = os.path.join(settings.BASE_DIR, 'data', dataset_name + ext)
+                    path = os.path.join(data_dir, dataset_name + ext)
                     if os.path.exists(path):
                         dataset_path = path
                         break

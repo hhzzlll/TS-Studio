@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { loginUser, registerUser, setAuthStorage } from '../api'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@iconify/vue'
 
@@ -10,19 +10,25 @@ const router = useRouter()
 
 const mode = ref<'login' | 'register'>('login')
 const username = ref('')
+const email = ref('')
 const password = ref('')
+const confirmPassword = ref('')
 const errorMsg = ref('')
 const loading = ref(false)
 
 const title = computed(() => (mode.value === 'login' ? '用户登录' : '用户注册'))
-const description = computed(() =>
-  mode.value === 'login' ? '请输入账号和密码以继续' : '创建新账号以使用系统功能'
-)
 
+const validatePasswordStrength = (pwd: string): string | null => {
+  if (pwd.length < 8) return '密码长度不能少于8位'
+  if (!/[a-zA-Z]/.test(pwd)) return '密码必须包含至少一个字母'
+  if (!/[0-9]/.test(pwd)) return '密码必须包含至少一个数字'
+  return null
+}
 const switchMode = (nextMode: 'login' | 'register') => {
   if (mode.value === nextMode) return
   mode.value = nextMode
   errorMsg.value = ''
+  confirmPassword.value = ''
 }
 
 const getErrorMessage = (error: any) => {
@@ -63,6 +69,26 @@ const handleSubmit = async () => {
     return
   }
 
+  if (mode.value === 'register') {
+    if (!email.value) {
+      errorMsg.value = '请输入邮箱'
+      return
+    }
+    if (!confirmPassword.value) {
+      errorMsg.value = '请再次输入密码'
+      return
+    }
+    if (password.value !== confirmPassword.value) {
+      errorMsg.value = '两次输入的密码不一致'
+      return
+    }
+    const strengthError = validatePasswordStrength(password.value)
+    if (strengthError) {
+      errorMsg.value = strengthError
+      return
+    }
+  }
+
   loading.value = true
   try {
     if (mode.value === 'login') {
@@ -74,7 +100,8 @@ const handleSubmit = async () => {
     } else {
       const res: any = await registerUser({
         username: username.value.trim(),
-        password: password.value
+        password: password.value,
+        email: email.value.trim()
       })
       setAuthStorage(res.token, res.user.username)
     }
@@ -123,7 +150,6 @@ const handleSubmit = async () => {
       <Card class="w-full max-w-md mx-auto shadow-xl border border-white/60 bg-white/80 backdrop-blur">
         <CardHeader class="pb-2">
           <CardTitle class="text-2xl">{{ title }}</CardTitle>
-          <CardDescription>{{ description }}</CardDescription>
         </CardHeader>
         <CardContent>
           <div class="flex gap-2 mb-6">
@@ -154,11 +180,32 @@ const handleSubmit = async () => {
             </div>
             <div class="space-y-2">
               <label class="text-sm font-medium">密码</label>
+              <div class="text-xs text-slate-500">至少8位，包含字母和数字</div>
               <input
                 v-model="password"
                 type="password"
                 class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
-                placeholder="密码"
+                :placeholder="mode === 'register' ? '至少8位，包含字母和数字' : '密码'"
+              />
+            </div>
+
+            <div v-if="mode === 'register'" class="space-y-2">
+              <label class="text-sm font-medium">邮箱</label>
+              <input
+                v-model="email"
+                type="email"
+                class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                placeholder="邮箱"
+              />
+            </div>
+
+            <div v-if="mode === 'register'" class="space-y-2">
+              <label class="text-sm font-medium">确认密码</label>
+              <input
+                v-model="confirmPassword"
+                type="password"
+                class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                placeholder="请再次输入密码"
               />
             </div>
 
@@ -167,6 +214,11 @@ const handleSubmit = async () => {
             <Button class="w-full" :disabled="loading" @click="handleSubmit">
               {{ loading ? '处理中...' : (mode === 'login' ? '登录' : '注册') }}
             </Button>
+            <div v-if="mode === 'login'" class="text-sm text-slate-500 text-center">
+              <router-link to="/forgot-password" class="text-emerald-700 hover:text-emerald-800 underline">
+                忘记密码？
+              </router-link>
+            </div>
           </div>
         </CardContent>
       </Card>
