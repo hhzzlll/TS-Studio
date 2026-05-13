@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { uploadFile, getDatasets, deleteDataset, getDatasetDownloadUrl, getDatasetInfo } from '../api'
+import { uploadFile, getDatasets, deleteDataset, getDatasetInfo, downloadDataset } from '../api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@iconify/vue'
@@ -121,12 +121,20 @@ const handleDelete = async (filename: string) => {
     }
 }
 
-const handleDownload = (filename: string) => {
-    // Open in new tab which will trigger download
-    // Use the full URL with base path included via proxy or logic
-    // Since we are in SPA, we can just use the url relative to current origin if proxy is set up
-    // getDatasetDownloadUrl returns `/api/...`
-    window.open(getDatasetDownloadUrl(filename), '_blank')
+const handleDownload = async (filename: string) => {
+    try {
+        const blob: any = await downloadDataset(filename)
+        const url = window.URL.createObjectURL(new Blob([blob]))
+        const link = document.createElement('a')
+        link.href = url
+        link.setAttribute('download', filename)
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        window.URL.revokeObjectURL(url)
+    } catch (error) {
+        console.error("Failed to download dataset", error)
+    }
 }
 
 const handlePreview = async (filename: string) => {

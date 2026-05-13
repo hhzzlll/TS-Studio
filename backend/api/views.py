@@ -186,6 +186,27 @@ class DatasetListView(APIView):
         print(f"DatasetListView: Found files: {files}")
         return Response(files)
 
+    def delete(self, request):
+        filename = request.query_params.get('filename')
+        if not filename:
+            return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        safe_name = normalize_user_filename(filename)
+        if not safe_name:
+            return Response({'error': '无效的文件名'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        data_dir = get_user_data_dir(request.user)
+        file_path = os.path.join(data_dir, safe_name)
+        
+        if not os.path.exists(file_path):
+             return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            os.remove(file_path)
+            return Response({'status': 'success', 'message': f'{filename} deleted'})
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class DatasetColumnsView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request, filename):
@@ -212,28 +233,6 @@ class DatasetColumnsView(APIView):
             return Response({'columns': cols})
         except Exception as e:
             return Response({'error': str(e)}, status=500)
-
-    def delete(self, request):
-        filename = request.query_params.get('filename')
-        if not filename:
-            return Response({'error': 'Filename required'}, status=status.HTTP_400_BAD_REQUEST)
-
-        safe_name = normalize_user_filename(filename)
-        if not safe_name:
-            return Response({'error': '无效的文件名'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        data_dir = get_user_data_dir(request.user)
-        file_path = os.path.join(data_dir, safe_name)
-        
-        if not os.path.exists(file_path):
-             return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        try:
-            os.remove(file_path)
-            # Also try to clean up any cached analysis if exists? (Optional)
-            return Response({'status': 'success', 'message': f'{filename} deleted'})
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class DatasetDownloadView(APIView):
     permission_classes = [IsAuthenticated]

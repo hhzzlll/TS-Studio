@@ -102,6 +102,13 @@ export const getDatasetDownloadUrl = (filename: string) => {
     return `/api/datasets/download/?filename=${filename}`
 }
 
+export const downloadDataset = async (filename: string) => {
+    const res = await api.get(`/datasets/download/?filename=${filename}`, {
+        responseType: 'blob'
+    })
+    return res
+}
+
 export const getTraditionalModels = () => {
     return api.get('/traditional-models/')
 }
