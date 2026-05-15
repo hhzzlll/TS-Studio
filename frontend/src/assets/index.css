@@ -235,7 +235,7 @@
     }
 
     .dataset-preview-panel {
-        min-height: 188px;
+        min-height: 0;
         background: linear-gradient(180deg, rgba(240, 253, 250, 0.72), rgba(248, 250, 252, 0.92));
     }
 

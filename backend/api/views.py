@@ -119,7 +119,7 @@ class FileUploadView(APIView):
                 # Replace NaN with None (null in JSON) to avoid JSON serialization errors
                 df = df.replace({np.nan: None})
                 
-                preview = df.head(5).to_dict(orient='records')
+                preview = df.head(10).to_dict(orient='records')
                 columns = list(df.columns)
                 return Response({
                     'status': 'success', 
@@ -151,7 +151,7 @@ class FileUploadView(APIView):
             # Replace NaN with None
             df = df.replace({np.nan: None})
             
-            preview = df.head(5).to_dict(orient='records')
+            preview = df.head(10).to_dict(orient='records')
             columns = list(df.columns)
             return Response({
                 'status': 'success', 
@@ -446,7 +446,7 @@ class DatasetInfoView(APIView):
             # Replace NaN with None
             df = df.replace({np.nan: None})
             
-            preview = df.head(5).to_dict(orient='records')
+            preview = df.head(10).to_dict(orient='records')
             columns = list(df.columns)
             return Response({
                 'filename': filename,
