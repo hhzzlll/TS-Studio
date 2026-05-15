@@ -194,6 +194,7 @@ class CNN_DiffusionUnet(nn.Module):
         self.args = args
 
         self.num_vars = num_vars
+        self.cond_num_vars = getattr(args, 'enc_in', num_vars)
         self.ori_seq_len = args.seq_len
         self.seq_len = seq_len
         self.label_len = args.label_len
@@ -234,13 +235,13 @@ class CNN_DiffusionUnet(nn.Module):
                 self.cond_projections.append(nn.Linear(self.ori_seq_len,self.pred_len))
                 self.cond_projections[i].weight = nn.Parameter((1/self.ori_seq_len)*torch.ones([self.pred_len,self.ori_seq_len]))
 
-            self.cnn_cond_projections = InputConvNetwork(args, self.num_vars, self.pred_len, num_layers=args.cond_ddpm_num_layers, ddpm_channels_conv=args.cond_ddpm_channels_conv)
+            self.cnn_cond_projections = InputConvNetwork(args, self.cond_num_vars, self.pred_len, num_layers=args.cond_ddpm_num_layers, ddpm_channels_conv=args.cond_ddpm_channels_conv)
             self.cnn_linear = nn.Linear(self.ori_seq_len, self.num_vars)
 
         if self.args.ablation_study_case  in ["mix_1", "mix_ar_0"]:
             self.combine_conv = InputConvNetwork(args, self.dim_intermediate_enc+self.num_vars, self.num_vars, num_layers=args.ddpm_layers_II)
         else:
-            self.combine_conv = InputConvNetwork(args, self.dim_intermediate_enc+self.num_vars+self.num_vars, self.num_vars, num_layers=args.ddpm_layers_II)
+            self.combine_conv = InputConvNetwork(args, self.dim_intermediate_enc+self.num_vars+self.cond_num_vars, self.num_vars, num_layers=args.ddpm_layers_II)
 
     def forward(self,  yn=None, diffusion_step=None, cond_info=None, y_clean=None):
 
@@ -263,8 +264,9 @@ class CNN_DiffusionUnet(nn.Module):
         # print(np.shape(x))
         
         pred_out = torch.zeros([yn.size(0),self.num_vars,self.pred_len],dtype=yn.dtype).to(yn.device)
+        cond_start = self.cond_num_vars - self.num_vars if self.args.features in ['MS'] else 0
         for i in range(self.num_vars):
-            pred_out[:,i,:] = self.cond_projections[i](cond_info[:,i,:self.ori_seq_len])
+            pred_out[:,i,:] = self.cond_projections[i](cond_info[:,cond_start+i,:self.ori_seq_len])
         
         if self.args.ablation_study_F_type == "CNN":
             # cnn with residual links

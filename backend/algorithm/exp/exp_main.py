@@ -48,6 +48,9 @@ class Exp_Main(Exp_Basic):
             data = f.read()
         config = json.loads(data)
         model_config = config['FEA_config']
+        if self.args.features in ['S', 'MS']:
+            model_config['in_channels'] = getattr(self.args, 'enc_in', self.args.num_vars)
+            model_config['out_channels'] = self.args.num_vars
         # Use appropriate device
         if self.args.use_gpu:
             self.adapter = FEA(**model_config).cuda()

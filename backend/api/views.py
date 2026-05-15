@@ -771,6 +771,7 @@ def run_training_task(training_job_id, config_data):
         args.features = 'M'
         args.target = 'OT'
         args.num_vars = 8
+        args.enc_in = 8
         args.checkpoints = './checkpoints/'
         args.freq = 'h'
         args.interval = 1000
@@ -841,11 +842,20 @@ def run_training_task(training_job_id, config_data):
                      df = pd.read_excel(full_data_path)
                  # args.num_vars = cols - 1 (assuming 1 date column)
                  args.num_vars = len(df.columns) - 1
+                 args.enc_in = args.num_vars
                  print(f"Updated args.num_vars to {args.num_vars} based on dataset columns")
              else:
                  print(f"Warning: Data file not found at {full_data_path}, skipping num_vars update")
         except Exception as e:
             print(f"Error reading dataset for num_vars: {e}")
+
+        if args.features == 'S':
+            args.enc_in = 1
+            args.num_vars = 1
+            print("Updated args.num_vars and args.enc_in to 1 for S forecasting mode")
+        elif args.features == 'MS':
+            args.num_vars = 1
+            print(f"Updated args.num_vars to 1 for MS forecasting mode, keeping args.enc_in={args.enc_in}")
 
         # 3. Update config_FEA.json
         try:
@@ -858,7 +868,7 @@ def run_training_task(training_job_id, config_data):
                     c = fea_config['FEA_config']
                     c['pred_len'] = args.pred_len
                     c['y_len'] = args.seq_len + args.pred_len
-                    c['in_channels'] = args.num_vars
+                    c['in_channels'] = getattr(args, 'enc_in', args.num_vars)
                     c['out_channels'] = args.num_vars
                 
                 with open(config_fea_path, 'w') as f:

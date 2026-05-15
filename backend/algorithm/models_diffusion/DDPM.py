@@ -50,7 +50,8 @@ class Model(nn.Module):
 
         self.short_term_range = args.label_len # args.seq_len # self.pred_len # args.seq_len
         # self.dlinear_model = nn.Linear(self.short_term_range, self.pred_len)
-        self.dlinear_model = PFM(input_size=args.num_vars,hidden_size=500,num_layers=1,output_size=args.pred_len,batch_size=args.batch_size)
+        self.enc_in = getattr(args, 'enc_in', args.num_vars)
+        self.dlinear_model = PFM(input_size=self.enc_in,hidden_size=500,num_layers=1,output_size=args.pred_len,batch_size=args.batch_size)
 
         self.norm_len = args.label_len
 

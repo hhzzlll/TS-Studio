@@ -105,6 +105,13 @@ parser.add_argument('--tag', type=str, default='')
 
 args = parser.parse_args()
 
+args.enc_in = args.num_vars
+if args.features == 'S':
+    args.enc_in = 1
+    args.num_vars = 1
+elif args.features == 'MS':
+    args.num_vars = 1
+
 args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
 
 fix_seed = args.seed
