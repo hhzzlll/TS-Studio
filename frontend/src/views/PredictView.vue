@@ -549,8 +549,8 @@ const getDisplayLabelLen = (model: any) => {
           </div>
           
           <!-- ARIMA 参数 -->
-          <div class="space-y-4">
-            <div class="text-xs font-semibold">ARIMA</div>
+          <div class="traditional-model-section space-y-4">
+            <div class="traditional-model-title">ARIMA</div>
             <div class="text-xs text-muted-foreground mb-2">
               提示: p代表自回归阶数(看近期走势)；d为差分阶数(让数据变平稳)；q为移动平均阶数(消除误差)。若预测是平的，可尝试增大或改变参数。
             </div>
@@ -593,8 +593,8 @@ const getDisplayLabelLen = (model: any) => {
             </div>          </div>
 
           <!-- Prophet 参数 -->
-          <div class="space-y-4 mt-6">
-            <div class="text-xs font-semibold">Prophet</div>
+          <div class="traditional-model-section space-y-4 mt-6">
+            <div class="traditional-model-title">Prophet</div>
              <div class="text-xs text-muted-foreground mb-2">
               提示: 如果数据呈现周期性波动，请勾选对应周期的开关。Additive适合波动幅度稳定的数据，Multiplicative适合波动幅度随数值增大的数据。
             </div>
@@ -618,8 +618,8 @@ const getDisplayLabelLen = (model: any) => {
           </div>
 
           <!-- Exponential Smoothing 参数 -->
-          <div class="space-y-4 mt-6">
-            <div class="text-xs font-semibold">指数平滑</div>
+          <div class="traditional-model-section space-y-4 mt-6">
+            <div class="traditional-model-title">指数平滑</div>
             <div class="text-xs text-muted-foreground mb-2">
               提示: 想要曲线呈现周期性波动，必须设置「Seasonal」为 Add/Mul，并将「Seasonal Periods」设置为数据的循环步长 (例如按小时采样的自然日周期可设为24)。
             </div>
@@ -648,8 +648,8 @@ const getDisplayLabelLen = (model: any) => {
           </div>
 
           <!-- Moving Average 参数 -->
-          <div class="space-y-4 mt-6">
-            <div class="text-xs font-semibold">移动平均</div>
+          <div class="traditional-model-section space-y-4 mt-6">
+            <div class="traditional-model-title">移动平均</div>
             <div class="text-xs text-muted-foreground mb-2">
               提示: Time Window 指的是取过去多少步的数据来求平均。加权移动平均(Weighted)会赋予距离预测点更近的数据更大的权重。
             </div>

@@ -298,23 +298,21 @@ onUnmounted(() => {
                     </select>
                   </div>
                   
-                  <div v-if="datasetPreview.length > 0" class="rounded-md border bg-muted/40 p-2">
-                        <div class="flex items-center justify-between mb-2">
+                  <div v-if="datasetPreview.length > 0" class="dataset-preview-panel rounded-md border bg-muted/40 p-3">
+                        <div class="flex items-center justify-between mb-3">
                             <span class="text-xs font-semibold text-muted-foreground">数据预览 top-5</span>
                             <span class="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{{ configForm.dataset_name }}</span>
                         </div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-xs text-left">
+                        <div class="max-h-64 overflow-auto rounded-md border bg-white/70">
+                            <table class="min-w-max w-full text-xs text-left">
                                 <thead>
                                     <tr class="border-b border-border/50">
-                                        <th v-for="col in datasetColumns.slice(0, 4)" :key="col" class="px-2 py-1 whitespace-nowrap text-muted-foreground font-normal">{{ col }}</th>
-                                        <th v-if="datasetColumns.length > 4" class="px-2 py-1 text-muted-foreground">...</th>
+                                        <th v-for="col in datasetColumns" :key="col" class="px-3 py-2 whitespace-nowrap text-muted-foreground font-semibold">{{ col }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr v-for="(row, i) in datasetPreview" :key="i" class="border-b border-border/50 last:border-0 hover:bg-muted/50">
-                                        <td v-for="col in datasetColumns.slice(0, 4)" :key="col" class="px-2 py-1 whitespace-nowrap font-mono">{{ typeof row[col] === 'number' ? row[col].toFixed(2) : row[col] }}</td>
-                                        <td v-if="datasetColumns.length > 4" class="px-2 py-1">...</td>
+                                        <td v-for="col in datasetColumns" :key="col" class="px-3 py-2 whitespace-nowrap font-mono">{{ typeof row[col] === 'number' ? row[col].toFixed(2) : row[col] }}</td>
                                     </tr>
                                 </tbody>
                             </table>

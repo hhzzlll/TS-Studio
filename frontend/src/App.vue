@@ -83,25 +83,29 @@ onUnmounted(() => {
   <div v-if="isMinimalRoute" class="min-h-screen bg-background">
     <router-view />
   </div>
-  <div v-else class="min-h-screen bg-background flex">
+  <div v-else class="app-shell min-h-screen bg-background flex">
     <!-- Sidebar -->
-    <aside class="w-64 border-r bg-card flex flex-col">
-      <div class="h-16 flex items-center px-6 border-b">
-        <h1 class="font-bold text-xl flex items-center gap-2">
-          <Icon icon="lucide:activity" class="h-6 w-6 text-primary" />
-          TS-Studio
+    <aside class="app-sidebar relative w-64 border-r border-white/10 flex flex-col overflow-hidden">
+      <div class="relative z-10 h-20 flex items-center px-5 border-b border-white/10">
+        <h1 class="font-bold text-xl flex items-center gap-3">
+          <span class="app-brand-mark flex h-10 w-10 items-center justify-center rounded-lg">
+            <Icon icon="lucide:activity" class="h-5 w-5 text-white" />
+          </span>
+          <span class="leading-tight">
+            <span class="block text-white">TS-Studio</span>
+          </span>
         </h1>
       </div>
       
-      <div class="flex-1 py-4 px-3 space-y-1">
+      <div class="relative z-10 flex-1 py-5 px-3 space-y-2">
         <template v-for="item in menuItems" :key="item.path">
           <router-link :to="item.path" custom v-slot="{ navigate }">
             <Button 
-              :variant="activePath === item.path ? 'secondary' : 'ghost'" 
-              class="w-full justify-start gap-2"
+              variant="ghost"
+              :class="['app-nav-button w-full justify-start gap-3', activePath === item.path ? 'is-active' : '']"
               @click="navigate"
             >
-              <Icon :icon="item.icon" class="h-4 w-4" />
+              <Icon :icon="item.icon" class="h-4 w-4 shrink-0" />
               {{ item.label }}
             </Button>
           </router-link>
@@ -111,16 +115,19 @@ onUnmounted(() => {
 
     <!-- Main Content -->
     <div class="flex-1 flex flex-col min-w-0">
-      <header class="h-16 border-b flex items-center px-6 bg-card justify-between">
-        <h2 class="font-semibold text-lg">{{ currentPageTitle }}</h2>
+      <header class="app-topbar sticky top-0 z-20 h-16 border-b flex items-center px-7 justify-between">
+        <div>
+          <h2 class="font-bold text-xl text-slate-900">{{ currentPageTitle }}</h2>
+          <p class="text-xs text-muted-foreground">时间序列预测实验平台</p>
+        </div>
         <div class="flex items-center gap-4">
           <router-link v-if="!isAuthed" to="/auth">
             <Button variant="outline" size="sm">登录 / 注册</Button>
           </router-link>
           
-          <div v-if="isAuthed" class="relative group cursor-pointer flex items-center gap-2">
+          <div v-if="isAuthed" class="relative group cursor-pointer flex items-center gap-2 rounded-lg border bg-white/70 px-2 py-1 shadow-sm">
             <!-- 头像和用户名 -->
-            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+            <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold">
               {{ authUsername.charAt(0).toUpperCase() }}
             </div>
             <span class="text-sm font-medium">{{ authUsername }}</span>
@@ -128,7 +135,7 @@ onUnmounted(() => {
             
             <!-- 下拉菜单 -->
             <div class="absolute right-0 top-full pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-              <div class="bg-popover text-popover-foreground rounded-md shadow-md border overflow-hidden w-32 flex flex-col">
+              <div class="bg-popover text-popover-foreground rounded-lg shadow-xl border overflow-hidden w-36 flex flex-col">
                 <!-- 保存的其他账号 -->
                 <div v-if="savedSessions.length > 0" class="py-1 border-b">
                   <div class="px-3 py-1.5 text-xs text-muted-foreground">切换账号</div>
@@ -138,7 +145,7 @@ onUnmounted(() => {
                     @click="handleSwitchAccount(session.username)" 
                     class="w-full px-4 py-2 text-sm text-left hover:bg-muted transition-colors flex items-center gap-2"
                   >
-                    <div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] text-primary font-bold">
+                    <div class="w-5 h-5 rounded-md bg-primary/20 flex items-center justify-center text-[10px] text-primary font-bold">
                       {{ session.username.charAt(0).toUpperCase() }}
                     </div>
                     <span class="truncate">{{ session.username }}</span>
@@ -155,7 +162,7 @@ onUnmounted(() => {
         </div>
       </header>
       
-      <main class="flex-1 p-6 overflow-auto">
+      <main class="content-surface flex-1 p-7 overflow-auto">
         <router-view />
       </main>
     </div>

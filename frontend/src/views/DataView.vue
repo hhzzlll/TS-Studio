@@ -162,7 +162,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6 pb-10">
     <Card>
       <CardHeader>
         <CardTitle>数据集上传</CardTitle>
@@ -172,14 +172,14 @@ onUnmounted(() => {
         <div v-if="!previewData.length" class="flex items-center justify-center w-full">
           <label 
             for="dropzone-file" 
-            class="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:hover:bg-bray-800 dark:bg-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:hover:border-gray-500 dark:hover:bg-gray-600"
+            class="dropzone-polished flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer transition-all duration-200"
             @dragover.prevent
             @drop.prevent="handleDrop"
           >
               <div class="flex flex-col items-center justify-center pt-5 pb-6">
-                  <Icon icon="lucide:cloud-upload" class="w-10 h-10 mb-3 text-gray-400" />
-                  <p class="mb-2 text-sm text-gray-500 dark:text-gray-400"><span class="font-semibold">Click to upload</span> or drag and drop</p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">CSV, XLSX (MAX. 10MB)</p>
+                  <Icon icon="lucide:cloud-upload" class="w-11 h-11 mb-3 text-primary" />
+                  <p class="mb-2 text-sm text-slate-600"><span class="font-semibold text-primary">点击上传</span> 或拖拽文件到这里</p>
+                  <p class="text-xs text-muted-foreground">支持 CSV、XLSX，建议使用标准时间序列格式</p>
               </div>
               <input id="dropzone-file" type="file" class="hidden" @change="handleFileChange" accept=".csv,.xlsx" />
           </label>

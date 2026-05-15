@@ -117,15 +117,19 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50 to-amber-50 flex items-center justify-center p-6">
-    <div class="absolute inset-0 pointer-events-none">
-      <div class="absolute -top-20 -left-20 h-64 w-64 rounded-full bg-emerald-200/40 blur-3xl"></div>
-      <div class="absolute bottom-0 right-0 h-72 w-72 rounded-full bg-amber-200/40 blur-3xl"></div>
+  <div class="auth-stage min-h-screen flex items-center justify-center p-6">
+    <div class="absolute inset-0 pointer-events-none opacity-60">
+      <div class="absolute left-12 top-12 h-px w-72 bg-gradient-to-r from-primary/40 to-transparent"></div>
+      <div class="absolute bottom-16 right-10 h-px w-80 bg-gradient-to-l from-orange-400/40 to-transparent"></div>
     </div>
 
     <div class="relative z-10 grid w-full max-w-5xl grid-cols-1 gap-8 lg:grid-cols-2">
-      <div class="hidden lg:flex flex-col justify-center gap-4">
-        <h1 class="text-4xl font-serif font-semibold text-slate-900 leading-tight">
+      <div class="hidden lg:flex flex-col justify-center gap-5">
+        <div class="inline-flex w-fit items-center gap-2 rounded-lg border border-teal-200/70 bg-white/60 px-3 py-2 text-sm font-semibold text-teal-800 shadow-sm">
+          <Icon icon="lucide:activity" class="h-4 w-4" />
+          Time Series Forecasting
+        </div>
+        <h1 class="text-5xl font-black text-slate-950 leading-tight">
           TS Studio
         </h1>
         <p class="text-slate-600 leading-relaxed">
@@ -147,7 +151,7 @@ const handleSubmit = async () => {
         </div>
       </div>
 
-      <Card class="w-full max-w-md mx-auto shadow-xl border border-white/60 bg-white/80 backdrop-blur">
+      <Card class="w-full max-w-md mx-auto shadow-xl border border-white/70 bg-white/85 backdrop-blur">
         <CardHeader class="pb-2">
           <CardTitle class="text-2xl">{{ title }}</CardTitle>
         </CardHeader>
