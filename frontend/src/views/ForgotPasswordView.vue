@@ -96,20 +96,20 @@ const handleResetPassword = async () => {
             <input v-model="username" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" placeholder="用户名" />
           </div>
 
-          <div v-if="step === 'confirm'" class="space-y-2">
+          <div class="space-y-2">
             <label class="text-sm font-medium">验证码</label>
-            <input v-model="code" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" placeholder="6位验证码" />
+            <input v-model="code" :disabled="step === 'request'" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-60" placeholder="发送验证码后填写" />
           </div>
 
-          <div v-if="step === 'confirm'" class="space-y-2">
+          <div class="space-y-2">
             <label class="text-sm font-medium">新密码</label>
             <div class="text-xs text-muted-foreground">至少8位，包含字母和数字</div>
-            <input v-model="password" type="password" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" placeholder="至少8位，包含字母和数字" />
+            <input v-model="password" :disabled="step === 'request'" type="password" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-60"  />
           </div>
 
-          <div v-if="step === 'confirm'" class="space-y-2">
+          <div class="space-y-2">
             <label class="text-sm font-medium">确认密码</label>
-            <input v-model="confirmPassword" type="password" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" placeholder="请再次输入密码" />
+            <input v-model="confirmPassword" :disabled="step === 'request'" type="password" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-60"  />
           </div>
 
           <div v-if="errorMsg" class="text-sm text-red-500">{{ errorMsg }}</div>
