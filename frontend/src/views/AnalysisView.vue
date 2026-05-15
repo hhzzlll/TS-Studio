@@ -28,6 +28,7 @@ const diffChartRef = ref<HTMLElement | null>(null)
 const fftChartRef = ref<HTMLElement | null>(null)
 let diffChart: echarts.ECharts | null = null
 let fftChart: echarts.ECharts | null = null
+let resizeTimer: ReturnType<typeof window.setTimeout> | null = null
 
 onMounted(async () => {
     window.addEventListener('resize', handleResize)
@@ -38,9 +39,11 @@ onMounted(async () => {
 onUnmounted(() => {
     window.removeEventListener('resize', handleResize)
     window.removeEventListener('auth-changed', handleAuthChanged)
-    myChart?.dispose()
-    diffChart?.dispose()
-    fftChart?.dispose()
+    if (resizeTimer) {
+        window.clearTimeout(resizeTimer)
+        resizeTimer = null
+    }
+    disposeAllCharts()
 })
 
 const loadDatasets = async () => {
@@ -70,9 +73,15 @@ const handleAuthChanged = async () => {
 }
 
 const handleResize = () => {
-    myChart?.resize()
-    diffChart?.resize()
-    fftChart?.resize()
+    if (!columnResult.value) return
+    if (resizeTimer) window.clearTimeout(resizeTimer)
+    resizeTimer = window.setTimeout(async () => {
+        await nextTick()
+        if (!columnResult.value) return
+        renderChart(columnResult.value)
+        renderDiffChart(columnResult.value)
+        renderFFTChart(columnResult.value)
+    }, 180)
 }
 
 const handleDatasetChange = async () => {
@@ -97,12 +106,7 @@ const handleDatasetChange = async () => {
 const resetColumnAnalysis = () => {
     columnResult.value = null
     columnErrorMsg.value = ''
-    myChart?.dispose()
-    diffChart?.dispose()
-    fftChart?.dispose()
-    myChart = null
-    diffChart = null
-    fftChart = null
+    disposeAllCharts()
 }
 
 const resetGeneralAnalysis = () => {
@@ -153,13 +157,77 @@ const handleColumnAnalyze = async () => {
     }
 }
 
+const disposeChart = (chart: echarts.ECharts | null, host: HTMLElement | null) => {
+    const existing = host ? echarts.getInstanceByDom(host) : null
+    existing?.dispose()
+    if (chart && chart !== existing) {
+        chart.dispose()
+    }
+    host?.replaceChildren()
+}
+
+const disposeAllCharts = () => {
+    disposeChart(myChart, chartRef.value)
+    disposeChart(diffChart, diffChartRef.value)
+    disposeChart(fftChart, fftChartRef.value)
+    myChart = null
+    diffChart = null
+    fftChart = null
+}
+
+const getCategoryTickIndexes = (labels: any[], host: HTMLElement | null, minGap = 110) => {
+    const width = host?.clientWidth || 900
+    const count = labels?.length || 0
+    if (count <= 0) return new Set<number>()
+    if (count <= 2) return new Set(Array.from({ length: count }, (_, index) => index))
+
+    const maxTicks = Math.max(2, Math.floor(width / minGap))
+    const tickCount = Math.min(count, maxTicks)
+    const indexes = new Set<number>([0, count - 1])
+
+    for (let i = 1; i < tickCount - 1; i += 1) {
+        indexes.add(Math.round((i * (count - 1)) / (tickCount - 1)))
+    }
+
+    return indexes
+}
+
+const formatTimeTick = (value: any) => {
+    const text = String(value ?? '')
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/)
+    if (!match) return text
+    return match[4] ? `${match[2]}-${match[3]}\n${match[4]}:${match[5]}` : `${match[2]}-${match[3]}`
+}
+
+const createCategoryAxis = (data: any, gridIndex: number, tickIndexes: Set<number>, name = '') => ({
+    type: 'category',
+    data: data.labels,
+    gridIndex,
+    name,
+    nameLocation: 'middle',
+    nameGap: 30,
+    boundaryGap: false,
+    axisLine: { show: true, lineStyle: { color: '#cbd5e1' } },
+    axisTick: { show: true, alignWithLabel: true, lineStyle: { color: '#cbd5e1' } },
+    axisLabel: {
+        show: true,
+        interval: (index: number) => tickIndexes.has(index),
+        formatter: formatTimeTick,
+        color: '#64748b',
+        fontSize: 10,
+        lineHeight: 13,
+        margin: 7,
+        hideOverlap: false
+    }
+})
+
 
 const renderDiffChart = (data: any) => {
     if (!diffChartRef.value) return
-    const existing = echarts.getInstanceByDom(diffChartRef.value)
-    if (existing) existing.dispose()
+    disposeChart(diffChart, diffChartRef.value)
     
-    diffChart = echarts.init(diffChartRef.value)
+    diffChart = echarts.init(diffChartRef.value, undefined, { renderer: 'svg' })
+    const tickIndexes = getCategoryTickIndexes(data.labels, diffChartRef.value, 95)
     
     const option = {
         title: {
@@ -173,13 +241,23 @@ const renderDiffChart = (data: any) => {
         grid: {
             left: '3%',
             right: '4%',
-            bottom: '10%',
+            bottom: '18%',
             containLabel: true
         },
         xAxis: {
             type: 'category',
             data: data.labels, // Should ideally shift by 1 but visualize align is ok
-            show: false 
+            boundaryGap: false,
+            axisLabel: {
+                interval: (index: number) => tickIndexes.has(index),
+                formatter: formatTimeTick,
+                hideOverlap: false,
+                color: '#64748b',
+                fontSize: 10,
+                lineHeight: 13
+            },
+            axisLine: { lineStyle: { color: '#cbd5e1' } },
+            axisTick: { alignWithLabel: true, lineStyle: { color: '#cbd5e1' } }
         },
         yAxis: {
             type: 'value',
@@ -201,15 +279,15 @@ const renderDiffChart = (data: any) => {
         }]
     }
     
-    diffChart.setOption(option)
+    diffChart.clear()
+    diffChart.setOption(option, { notMerge: true, lazyUpdate: false })
 }
 
 const renderFFTChart = (data: any) => {
     if (!fftChartRef.value) return
-    const existing = echarts.getInstanceByDom(fftChartRef.value)
-    if (existing) existing.dispose()
+    disposeChart(fftChart, fftChartRef.value)
     
-    fftChart = echarts.init(fftChartRef.value)
+    fftChart = echarts.init(fftChartRef.value, undefined, { renderer: 'svg' })
     
     const option = {
         title: {
@@ -262,31 +340,24 @@ const renderFFTChart = (data: any) => {
         }]
     }
     
-    fftChart.setOption(option)
+    fftChart.clear()
+    fftChart.setOption(option, { notMerge: true, lazyUpdate: false })
 }
 
 const renderChart = (data: any) => {
     if (!chartRef.value) return
-    
-    // 关键修复：确保销毁 DOM 上可能存在的旧实例（包括僵尸实例）
-    const existingInstance = echarts.getInstanceByDom(chartRef.value)
-    if (existingInstance) {
-        existingInstance.dispose()
-    }
-    // 双重保险：如果有 JS 变量引用，也销毁
-    if (myChart) {
-        myChart.dispose()
-    }
+    disposeChart(myChart, chartRef.value)
 
-    myChart = echarts.init(chartRef.value)
+    myChart = echarts.init(chartRef.value, undefined, { renderer: 'svg' })
+    const tickIndexes = getCategoryTickIndexes(data.labels, chartRef.value)
     
     const option = {
         animation: false,
         title: [
             { text: 'Observed (Original) with Anomalies', left: 'center', top: '2%', textStyle: { fontSize: 12 } },
-            { text: 'Trend', left: 'center', top: '27%', textStyle: { fontSize: 12 } },
-            { text: 'Seasonal', left: 'center', top: '52%', textStyle: { fontSize: 12 } },
-            { text: 'Residual', left: 'center', top: '77%', textStyle: { fontSize: 12 } }
+            { text: 'Trend', left: 'center', top: '25%', textStyle: { fontSize: 12 } },
+            { text: 'Seasonal', left: 'center', top: '48%', textStyle: { fontSize: 12 } },
+            { text: 'Residual', left: 'center', top: '71%', textStyle: { fontSize: 12 } }
         ],
         tooltip: {
             trigger: 'axis',
@@ -296,16 +367,16 @@ const renderChart = (data: any) => {
             link: { xAxisIndex: 'all' }
         },
         grid: [
-            { left: '5%', right: '5%', top: '8%', height: '18%' },
-            { left: '5%', right: '5%', top: '33%', height: '18%' },
-            { left: '5%', right: '5%', top: '58%', height: '18%' },
-            { left: '5%', right: '5%', top: '83%', height: '18%' }
+            { left: '5%', right: '5%', top: '8%', height: '13%' },
+            { left: '5%', right: '5%', top: '31%', height: '13%' },
+            { left: '5%', right: '5%', top: '54%', height: '13%' },
+            { left: '5%', right: '5%', top: '77%', height: '12%' }
         ],
         xAxis: [
-            { type: 'category', data: data.labels, gridIndex: 0, show: false },
-            { type: 'category', data: data.labels, gridIndex: 1, show: false },
-            { type: 'category', data: data.labels, gridIndex: 2, show: false },
-            { type: 'category', data: data.labels, gridIndex: 3 }
+            createCategoryAxis(data, 0, tickIndexes),
+            createCategoryAxis(data, 1, tickIndexes),
+            createCategoryAxis(data, 2, tickIndexes),
+            createCategoryAxis(data, 3, tickIndexes, 'Time')
         ],
         yAxis: [
              { type: 'value', gridIndex: 0, scale: true, splitNumber: 3 },
@@ -315,7 +386,7 @@ const renderChart = (data: any) => {
         ],
         dataZoom: [
             { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: 0, end: 100 },
-            { type: 'slider', xAxisIndex: [0, 1, 2, 3], start: 0, end: 100, bottom: 5 }
+            { type: 'slider', xAxisIndex: [0, 1, 2, 3], start: 0, end: 100, bottom: 0, height: 18 }
         ],
         series: [
             {
@@ -325,7 +396,6 @@ const renderChart = (data: any) => {
                 yAxisIndex: 0,
                 data: data.values,
                 showSymbol: false,
-                sampling: 'lttb',
                 lineStyle: { width: 1 },
                 itemStyle: { color: '#5470c6' }
             },
@@ -348,7 +418,6 @@ const renderChart = (data: any) => {
                 yAxisIndex: 1,
                 data: data.trend,
                 showSymbol: false,
-                sampling: 'lttb',
                 itemStyle: { color: '#fac858' },
                 lineStyle: { width: 2, color: '#fac858' }
             },
@@ -359,7 +428,6 @@ const renderChart = (data: any) => {
                 yAxisIndex: 2,
                 data: data.seasonal,
                 showSymbol: false,
-                sampling: 'lttb',
                 itemStyle: { color: '#91cc75' },
                 lineStyle: { width: 1, opacity: 0.6, color: '#91cc75' }
             },
@@ -376,7 +444,8 @@ const renderChart = (data: any) => {
         ]
     }
     
-    myChart.setOption(option)
+    myChart.clear()
+    myChart.setOption(option, { notMerge: true, lazyUpdate: false })
 }
 
 const statsTable = computed(() => {
@@ -494,13 +563,20 @@ const formatNum = (v: any) => {
         <div v-if="columnResult" class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
              <Card>
                 <CardHeader>
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <CardTitle class="flex items-center gap-2">
                         <Icon icon="lucide:activity" class="h-5 w-5 text-primary" />
                         趋势与季节性分析: {{ columnResult.column }}
                     </CardTitle>
+                        <div class="lg:ml-10 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                            <span class="font-medium text-foreground">Decomposition:</span>
+                            <span class="ml-2 font-mono text-[13px] text-foreground">X(t) = T(t) + S(t) + R(t)</span>
+                            <span class="ml-2">原始值 = 趋势项 + 季节项 + 残差项</span>
+                        </div>
+                    </div>
                 </CardHeader>
                 <CardContent>
-                    <div ref="chartRef" class="w-full h-[600px]"></div>
+                    <div ref="chartRef" class="w-full h-[680px]"></div>
                     
                     <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mt-6 pt-6 border-t text-sm">
                         <div class="space-y-1">
