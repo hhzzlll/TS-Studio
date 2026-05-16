@@ -107,10 +107,7 @@ TS-Studio
 │   │   └── components/      # 复用 UI 组件
 │   ├── package.json
 │   └── vite.config.ts
-├── ALGORITHM_DETAILS.md     # 算法相关扩展说明
-├── PROJECT_OVERVIEW.md      # 项目总体说明
-├── WEB_SYSTEM_DESIGN.md     # Web 系统设计说明
-├── THESIS_SUPPORT.md        # 论文写作辅助材料
+└── .gitignore
 └── README.md
 ```
 
