@@ -182,16 +182,6 @@ const handleSubmit = async () => {
                 placeholder="用户名"
               />
             </div>
-            <div class="space-y-2">
-              <label class="text-sm font-medium">密码</label>
-              <div class="text-xs text-slate-500">至少8位，包含字母和数字</div>
-              <input
-                v-model="password"
-                type="password"
-                class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
-                :placeholder="mode === 'register' ? '至少8位，包含字母和数字' : '密码'"
-              />
-            </div>
 
             <div v-if="mode === 'register'" class="space-y-2">
               <label class="text-sm font-medium">邮箱</label>
@@ -200,6 +190,17 @@ const handleSubmit = async () => {
                 type="email"
                 class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
                 placeholder="邮箱"
+              />
+            </div>
+
+            <div class="space-y-2">
+              <label class="text-sm font-medium">密码</label>
+              <div class="text-xs text-slate-500">至少8位，包含字母和数字</div>
+              <input
+                v-model="password"
+                type="password"
+                class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                :placeholder="mode === 'register' ? '至少8位，包含字母和数字' : '密码'"
               />
             </div>
 
